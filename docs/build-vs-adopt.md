@@ -164,15 +164,15 @@ Honorable mention: **Goose** as a second worker-backend plugin if the Phase 2 pl
 
 ---
 
-## Design-gap questions surfaced
+## Design-gap questions resolved
 
-These came up while scoring candidates; flagging for architecture-side decisions, not proposing changes:
+These came up while scoring candidates and were resolved with the operator on 2026-04-20.
 
-1. **Mnemosyne backend commitment.** Graphiti's temporal-KG shape is architecturally attractive for `learned_facts` but requires Neo4j/FalkorDB/Kuzu. Is the "single shared Postgres LXC" decision binding enough to rule out a KG sidecar, or is a graph backend permissible if it doesn't disturb the Minos/Argus/Mnemosyne DB-consolidation?
-2. **Vault governance hedge.** If Hecate's PoC is on `vault-mcp-server`, does the BSL governance risk warrant documenting OpenBao as the reference backend (not just a valid substitute)? Matches the "Infisical or file-backed" pattern already in §17.
-3. **Ariadne scope granularity.** The `ariadne` broker has exactly one scope (`query`). Grafana SA tokens naturally express datasource-scoped queries (`datasources:uid:loki-prod`). Is per-datasource scope separation useful for Ariadne (e.g., "Iris can query task logs but not MCP-broker audit logs"), or is one read scope always enough?
-4. **Asclepius history location.** Prometheus-as-Asclepius forces a hybrid: metrics in Prometheus TSDB, transition history in the `asclepius` Postgres schema. §13 describes transitions in Postgres but doesn't explicitly rule out Prometheus TSDB as the *metric-history* tier. Is that split OK, or should §13 stake out "all history in Postgres"?
-5. **Research-broker scope granularity.** Exa and Firecrawl bundle expensive deep-research tools with cheap search under one upstream key. A single `research.query` scope papers over that. Worth a `research.deep` separation for per-task cost containment, or does budget enforcement at the task envelope level cover it?
+1. **Mnemosyne backend commitment.** *Resolved — single-Postgres stays.* Graphiti's temporal-KG shape is architecturally attractive for `learned_facts`, but adopting Neo4j/FalkorDB/Kuzu as a sidecar is a service-expansion decision. Any such expansion requires an explicit justification case (operational evidence that pgvector alone is inadequate) and lands no earlier than Phase 3.
+2. **Vault governance hedge.** *Resolved — OpenBao is the named Vault-compatible alternative.* The Vault OSS BSL 1.1 license is acceptable for homelab use but carries governance risk; OpenBao (MPL-2.0, LF-governed, IBM-backed, API-compatible with Vault 1.14) is the preferred backend if Hecate's PoC goes the Vault-API route. Documented in `environment.md §3`.
+3. **Ariadne scope granularity.** *Resolved — single `query` scope stays through Phase 2.* Per-datasource or per-log-class scope separation can be added in a later phase without structural change if operational need emerges. Grafana SA tokens can be narrowed when that time comes.
+4. **Asclepius history location.** *Resolved — Postgres is not exclusive for future service history.* Adding a second history store (Prometheus TSDB, or any other) is treated as a service-expansion decision requiring a justification case, Phase 3+. When Asclepius lands, the hybrid (metrics in Prometheus, transitions in `asclepius` Postgres schema) will need that justification written out, not assumed.
+5. **Research-broker scope granularity.** *Resolved — single `research.query` scope at Phase 3 landing.* Task envelope budget (`budget.max_tokens`, `max_wall_clock_seconds` in §8) is the containment mechanism for deep-research cost. A `research.deep` split is deferred pending operational evidence that deep-research is dramatically costlier than ordinary queries; premature split complicates the common case.
 
 ---
 

@@ -83,7 +83,12 @@ Specific Infisical instance serves as the homelab implementation of Minos's secr
 
 **Phase 1 default is the file-backed provider**, not Infisical — this keeps a clean Phase 1 install self-contained on Crete with no dependency on an external secrets service. Both provider implementations ship in Phase 1 (see `architecture.md §17` MVP Blockers — Secret provider); Infisical is selected instead of the default when a homelab deployment already runs it. The durable rotation story (Hecate-fronted credential fetches with JWT ACLs) is Phase 2+; Phase 1 rotation under either provider is restart-driven.
 
-Contract: Minos (Phase 1) or Hecate (Phase 2+) can obtain per-project, per-task credentials from a secret store at spawn time without human interaction, and can rotate them without disrupting running agents. Any provider implementation meeting this contract — Vault, AWS Secrets Manager, file-backed, etc. — is a valid substitute.
+Contract: Minos (Phase 1) or Hecate (Phase 2+) can obtain per-project, per-task credentials from a secret store at spawn time without human interaction, and can rotate them without disrupting running agents. Any provider implementation meeting this contract is a valid substitute. Named alternatives:
+
+- **OpenBao** — Linux-Foundation fork of Vault 1.14 from before HashiCorp's 2023 license change; MPL-2.0, IBM-backed, API-compatible with HashiCorp Vault. Preferred over HashiCorp Vault OSS (BSL 1.1) when taking the Vault-API route, because MPL-2.0 governance avoids the BSL license risk. The Phase 2 Hecate broker's PoC target (`hashicorp/vault-mcp-server`, per `build-vs-adopt.md`) works unchanged against OpenBao.
+- **HashiCorp Vault OSS** — BSL 1.1; acceptable for homelab self-host but carries governance risk if HashiCorp's licensing posture changes further.
+- **AWS Secrets Manager, GCP Secret Manager, Azure Key Vault** — valid contract-wise but fail the self-containment property this homelab targets; not recommended for this deployment.
+- **File-backed** — Phase 1 default, ships in-repo.
 
 ### Phase 1 Hermes Surface (Discord)
 
