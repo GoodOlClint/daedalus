@@ -43,6 +43,7 @@ type Task struct {
 	Envelope   *envelope.Envelope
 	RunID      *uuid.UUID
 	PodName    *string
+	PRURL      *string
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
@@ -75,4 +76,14 @@ type Store interface {
 	// SetTaskRun records the k3s pod name and generated run ID once a pod
 	// has been successfully spawned for this task.
 	SetTaskRun(ctx context.Context, id uuid.UUID, runID uuid.UUID, podName string) error
+
+	// SetTaskPR records the PR URL the pod opened. Called from the pod's
+	// POST /tasks/{id}/pr callback. Returns ErrConflict if the URL is
+	// already bound to a different task.
+	SetTaskPR(ctx context.Context, id uuid.UUID, prURL string) error
+
+	// FindTaskByPRURL returns the task whose PR URL matches exactly, or
+	// ErrNotFound. Used by the GitHub webhook handler to resolve
+	// pull_request events back to the owning task.
+	FindTaskByPRURL(ctx context.Context, prURL string) (*Task, error)
 }

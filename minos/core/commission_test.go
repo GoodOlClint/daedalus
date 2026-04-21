@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
+	"github.com/GoodOlClint/daedalus/cerberus/core/replay"
 	"github.com/GoodOlClint/daedalus/minos/core"
 	"github.com/GoodOlClint/daedalus/minos/dispatch"
 	"github.com/GoodOlClint/daedalus/minos/dispatch/fakedispatch"
@@ -41,24 +41,28 @@ func (p *staticProvider) AuditList(context.Context, string) ([]provider.AuditEnt
 // individual tests can reach into the dispatcher or store without the
 // helper signature growing unbounded.
 type testServerKit struct {
-	server       *core.Server
-	store        *memstore.Store
-	dispatcher   *fakedispatch.Dispatcher
-	bearerSecret []byte
+	server        *core.Server
+	store         *memstore.Store
+	dispatcher    *fakedispatch.Dispatcher
+	bearerSecret  []byte
+	webhookSecret []byte
 }
 
 func newTestServer(t *testing.T) testServerKit {
 	t.Helper()
 	bearerSecret := []byte("bearer-secret-for-tests")
+	webhookSecret := []byte("webhook-secret-for-tests")
 	prov := &staticProvider{refs: map[string][]byte{
-		"minos-bearer-secret": bearerSecret,
-		"minos-admin-token":   []byte("admin-token"),
-		"github-app-token":    []byte("ghs_injected"),
+		"minos-bearer-secret":   bearerSecret,
+		"minos-admin-token":     []byte("admin-token"),
+		"github-app-token":      []byte("ghs_injected"),
+		"github-webhook-secret": webhookSecret,
 	}}
 	cfg := core.Config{
-		ListenAddr:      ":0",
-		BearerSecretRef: "minos-bearer-secret",
-		AdminTokenRef:   "minos-admin-token",
+		ListenAddr:             ":0",
+		BearerSecretRef:        "minos-bearer-secret",
+		AdminTokenRef:          "minos-admin-token",
+		GithubWebhookSecretRef: "github-webhook-secret",
 		Admin: core.AdminIdentity{
 			Surface:   "discord",
 			SurfaceID: "admin-id",
@@ -95,13 +99,20 @@ func newTestServer(t *testing.T) testServerKit {
 	}
 	store := memstore.New(nil)
 	disp := fakedispatch.New()
+	rs := replay.NewMemStore(0)
 	srv, err := core.New(cfg, prov, store, disp, audit.NewWriterEmitter("minos-test", discardWriter{}),
-		core.WithClock(func() time.Time { return time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC) }),
+		core.WithReplayStore(rs),
 	)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
-	return testServerKit{server: srv, store: store, dispatcher: disp, bearerSecret: bearerSecret}
+	return testServerKit{
+		server:        srv,
+		store:         store,
+		dispatcher:    disp,
+		bearerSecret:  bearerSecret,
+		webhookSecret: webhookSecret,
+	}
 }
 
 type discardWriter struct{}
@@ -307,10 +318,11 @@ func TestCommissionUnresolvableCredentialFails(t *testing.T) {
 		// Intentionally missing github-app-token.
 	}}
 	cfg := core.Config{
-		ListenAddr:      ":0",
-		BearerSecretRef: "minos-bearer-secret",
-		AdminTokenRef:   "minos-admin-token",
-		Admin:           core.AdminIdentity{Surface: "discord", SurfaceID: "admin-id"},
+		ListenAddr:             ":0",
+		BearerSecretRef:        "minos-bearer-secret",
+		AdminTokenRef:          "minos-admin-token",
+		GithubWebhookSecretRef: "github-webhook-secret",
+		Admin:                  core.AdminIdentity{Surface: "discord", SurfaceID: "admin-id"},
 		Project: core.ProjectConfig{
 			ID:                   "p",
 			Backend:              "claude-code",

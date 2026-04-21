@@ -26,6 +26,11 @@ type BuilderInput struct {
 	ProjectID     string
 	WorkspaceSize envelope.WorkspaceSize
 
+	// MinosURL is the pod-reachable URL of the Minos HTTP API (for the
+	// /tasks/{id}/pr callback). Empty is acceptable but disables the
+	// pod → Minos PR-report path.
+	MinosURL string
+
 	// Resolver fetches credential plaintext for each InjectedCredential in
 	// the envelope. Typical implementation is the secret provider.
 	Resolver CredentialResolver
@@ -66,13 +71,19 @@ func BuildPodSpec(ctx context.Context, in BuilderInput) (PodSpec, error) {
 	}
 
 	plainEnv := map[string]string{
-		"DAEDALUS_ENVELOPE":      EnvelopePath,
-		"DAEDALUS_TASK_ID":       in.TaskID.String(),
-		"DAEDALUS_RUN_ID":        in.RunID.String(),
-		"DAEDALUS_PROJECT_ID":    in.ProjectID,
-		"DAEDALUS_THREAD_URL":    in.Envelope.Communication.HermesURL,
-		"DAEDALUS_ARGUS_INGEST":  in.Envelope.Communication.ArgusIngestURL,
+		"DAEDALUS_ENVELOPE":       EnvelopePath,
+		"DAEDALUS_TASK_ID":        in.TaskID.String(),
+		"DAEDALUS_RUN_ID":         in.RunID.String(),
+		"DAEDALUS_PROJECT_ID":     in.ProjectID,
+		"DAEDALUS_THREAD_URL":     in.Envelope.Communication.HermesURL,
+		"DAEDALUS_ARGUS_INGEST":   in.Envelope.Communication.ArgusIngestURL,
 		"DAEDALUS_ARIADNE_INGEST": in.Envelope.Communication.AriadneIngestURL,
+	}
+	if in.MinosURL != "" {
+		plainEnv["DAEDALUS_MINOS_URL"] = in.MinosURL
+	}
+	if in.Envelope.Capabilities.McpAuthToken != "" {
+		secretEnv["MCP_AUTH_TOKEN"] = in.Envelope.Capabilities.McpAuthToken
 	}
 
 	labels := map[string]string{

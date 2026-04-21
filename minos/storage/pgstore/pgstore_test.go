@@ -135,6 +135,37 @@ func TestSetTaskRun(t *testing.T) {
 	}
 }
 
+func TestSetAndFindPRURL(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openTestStore(t)
+
+	a := newTask()
+	b := newTask()
+	for _, tk := range []*storage.Task{a, b} {
+		if err := store.InsertTask(ctx, tk); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+	url := "https://github.com/example/widget/pull/42"
+	if err := store.SetTaskPR(ctx, a.ID, url); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, err := store.FindTaskByPRURL(ctx, url)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got.ID != a.ID {
+		t.Errorf("wrong task: got %v want %v", got.ID, a.ID)
+	}
+	// Unique constraint on second task with same URL.
+	if err := store.SetTaskPR(ctx, b.ID, url); !errors.Is(err, storage.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
+	}
+	if _, err := store.FindTaskByPRURL(ctx, "https://example.invalid/pull/1"); !errors.Is(err, storage.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestSetTaskRunMissing(t *testing.T) {
 	ctx := context.Background()
 	store, _ := openTestStore(t)

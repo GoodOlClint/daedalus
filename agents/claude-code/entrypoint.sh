@@ -17,6 +17,7 @@ set -euo pipefail
 : "${DAEDALUS_ENVELOPE:=/var/run/daedalus/envelope.json}"
 : "${DAEDALUS_MEMORY_DIR:=/var/run/daedalus/memory}"
 : "${WORKSPACE:=/workspace}"
+: "${DAEDALUS_MINOS_URL:=}"
 
 log()  { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 die()  { log "ERROR: $*"; flush_memory "failed" "$*"; exit 1; }
@@ -121,6 +122,25 @@ PR_URL=$(gh pr create \
   2>&1 | tail -1)
 log "PR: $PR_URL"
 RUN_SUMMARY="Opened $PR_URL for branch $BRANCH"
+
+# Report PR to Minos so the webhook handler can bind it back to this task.
+# Requires DAEDALUS_MINOS_URL and MCP_AUTH_TOKEN to be in the pod env.
+if [[ -n "$DAEDALUS_MINOS_URL" && -n "${MCP_AUTH_TOKEN:-}" ]]; then
+  log "reporting PR url to Minos"
+  report_body=$(jq -n --arg pr "$PR_URL" '{pr_url: $pr}')
+  report_status=$(curl -sS -o /tmp/pr-report-response -w '%{http_code}' \
+    -X POST \
+    -H "Authorization: Bearer $MCP_AUTH_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "$report_body" \
+    "$DAEDALUS_MINOS_URL/tasks/$DAEDALUS_TASK_ID/pr" \
+    || echo "000")
+  if [[ "$report_status" != "200" ]]; then
+    log "WARN: PR report to Minos returned $report_status: $(cat /tmp/pr-report-response 2>/dev/null)"
+  fi
+else
+  log "skipping PR report (DAEDALUS_MINOS_URL or MCP_AUTH_TOKEN unset)"
+fi
 
 flush_memory "completed" "$PR_URL"
 log "done"

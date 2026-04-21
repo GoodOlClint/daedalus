@@ -177,6 +177,37 @@ func TestListFilterAndOrder(t *testing.T) {
 	}
 }
 
+func TestSetAndFindPRURL(t *testing.T) {
+	ctx := context.Background()
+	s := memstore.New(nil)
+	a := newTask()
+	b := newTask()
+	for _, tk := range []*storage.Task{a, b} {
+		if err := s.InsertTask(ctx, tk); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+	url := "https://github.com/example/widget/pull/42"
+	if err := s.SetTaskPR(ctx, a.ID, url); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	got, err := s.FindTaskByPRURL(ctx, url)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got.ID != a.ID {
+		t.Errorf("wrong task: %v vs %v", got.ID, a.ID)
+	}
+	// Same URL on another task should fail with conflict.
+	if err := s.SetTaskPR(ctx, b.ID, url); !errors.Is(err, storage.ErrConflict) {
+		t.Errorf("expected ErrConflict on duplicate PR URL, got %v", err)
+	}
+	// Missing URL returns ErrNotFound.
+	if _, err := s.FindTaskByPRURL(ctx, "https://example.invalid/pull/1"); !errors.Is(err, storage.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestSetTaskRun(t *testing.T) {
 	ctx := context.Background()
 	s := memstore.New(nil)

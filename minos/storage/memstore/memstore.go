@@ -129,6 +129,41 @@ func (s *Store) SetTaskRun(_ context.Context, id, runID uuid.UUID, podName strin
 	return nil
 }
 
+// SetTaskPR implements storage.Store.
+func (s *Store) SetTaskPR(_ context.Context, id uuid.UUID, prURL string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", storage.ErrNotFound, id)
+	}
+	// Enforce uniqueness across live tasks.
+	for otherID, other := range s.tasks {
+		if otherID == id {
+			continue
+		}
+		if other.PRURL != nil && *other.PRURL == prURL {
+			return fmt.Errorf("%w: pr url %q bound to %s", storage.ErrConflict, prURL, otherID)
+		}
+	}
+	url := prURL
+	t.PRURL = &url
+	return nil
+}
+
+// FindTaskByPRURL implements storage.Store.
+func (s *Store) FindTaskByPRURL(_ context.Context, prURL string) (*storage.Task, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, t := range s.tasks {
+		if t.PRURL != nil && *t.PRURL == prURL {
+			clone := *t
+			return &clone, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: pr %q", storage.ErrNotFound, prURL)
+}
+
 // validTransition encodes the Phase 1 state machine per storage.Store docs.
 func validTransition(from, to storage.State) bool {
 	switch from {

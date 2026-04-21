@@ -13,12 +13,17 @@ import (
 // AdminIdentity are scalars accordingly. Phase 2 replaces Project with a
 // registry and AdminIdentity with the identity registry.
 type Config struct {
-	ListenAddr      string         `json:"listen_addr"`
-	DatabaseURL     string         `json:"database_url"`
-	BearerSecretRef string         `json:"bearer_secret_ref"`
-	AdminTokenRef   string         `json:"admin_token_ref"`
-	Admin           AdminIdentity  `json:"admin"`
-	Project         ProjectConfig  `json:"project"`
+	ListenAddr             string        `json:"listen_addr"`
+	DatabaseURL            string        `json:"database_url"`
+	BearerSecretRef        string        `json:"bearer_secret_ref"`
+	AdminTokenRef          string        `json:"admin_token_ref"`
+	GithubWebhookSecretRef string        `json:"github_webhook_secret_ref"`
+	// MinosPodURL is the Minos API URL as seen from inside a Labyrinth
+	// pod. Injected into the pod as DAEDALUS_MINOS_URL so the entrypoint
+	// can POST /tasks/{id}/pr after opening the PR.
+	MinosPodURL string        `json:"minos_pod_url"`
+	Admin       AdminIdentity `json:"admin"`
+	Project     ProjectConfig `json:"project"`
 }
 
 // AdminIdentity is the single hardcoded admin tuple checked at command
@@ -74,6 +79,9 @@ func validateConfig(c *Config) error {
 	}
 	if c.AdminTokenRef == "" {
 		return fmt.Errorf("admin_token_ref required")
+	}
+	if c.GithubWebhookSecretRef == "" {
+		return fmt.Errorf("github_webhook_secret_ref required")
 	}
 	if c.Admin.Surface == "" || c.Admin.SurfaceID == "" {
 		return fmt.Errorf("admin identity (surface, surface_id) required")

@@ -155,6 +155,7 @@ func (s *Server) dispatch(ctx context.Context, task *storage.Task) error {
 		Image:         s.cfg.Project.PluginImage,
 		ProjectID:     s.cfg.Project.ID,
 		WorkspaceSize: task.Envelope.Execution.WorkspaceSize,
+		MinosURL:      s.cfg.MinosPodURL,
 		Resolver:      s.provider,
 	})
 	if err != nil {

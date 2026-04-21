@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	ghverify "github.com/GoodOlClint/daedalus/cerberus/verification/github"
 	"github.com/GoodOlClint/daedalus/minos/dispatch"
 	"github.com/GoodOlClint/daedalus/minos/storage"
 	"github.com/GoodOlClint/daedalus/pkg/audit"
@@ -19,13 +20,14 @@ import (
 
 // Server is the Minos core service instance.
 type Server struct {
-	cfg        Config
-	provider   provider.Provider
-	store      storage.Store
-	dispatcher dispatch.Dispatcher
-	audit      audit.Emitter
-	namespace  string
-	now        func() time.Time
+	cfg         Config
+	provider    provider.Provider
+	store       storage.Store
+	dispatcher  dispatch.Dispatcher
+	audit       audit.Emitter
+	replayStore ghverify.ReplayStore
+	namespace   string
+	now         func() time.Time
 }
 
 // Option configures a Server at construction time.
@@ -40,6 +42,14 @@ func WithClock(now func() time.Time) Option {
 // Default is "daedalus".
 func WithNamespace(ns string) Option {
 	return func(s *Server) { s.namespace = ns }
+}
+
+// WithReplayStore wires a Cerberus replay store into the server so the
+// GitHub webhook handler can dedupe deliveries. When not set, replay
+// protection is disabled — acceptable for -mem-store local dev, not for
+// production.
+func WithReplayStore(rs ghverify.ReplayStore) Option {
+	return func(s *Server) { s.replayStore = rs }
 }
 
 // New returns a Server wired with its dependencies. It does not start any

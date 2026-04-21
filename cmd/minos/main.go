@@ -8,9 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/GoodOlClint/daedalus/cerberus/core/replay"
+	ghverify "github.com/GoodOlClint/daedalus/cerberus/verification/github"
 	"github.com/GoodOlClint/daedalus/minos/core"
 	"github.com/GoodOlClint/daedalus/minos/dispatch"
 	"github.com/GoodOlClint/daedalus/minos/dispatch/fakedispatch"
@@ -30,64 +33,84 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig (empty = in-cluster config)")
 	flag.Parse()
 
-	cfg, err := core.LoadConfig(*configPath)
-	if err != nil {
+	if err := run(*configPath, *providerPath, *memMode, *fakeDispatch, *kubeconfig); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
 
-	prov, err := file.Open(*providerPath)
+func run(configPath, providerPath string, memMode, fakeDispatch bool, kubeconfig string) error {
+	cfg, err := core.LoadConfig(configPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
+	}
+	prov, err := file.Open(providerPath)
+	if err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	var store storage.Store
-	if *memMode {
-		store = memstore.New(nil)
-	} else {
-		if cfg.DatabaseURL == "" {
-			fmt.Fprintln(os.Stderr, "database_url required unless -mem-store is set")
-			os.Exit(1)
-		}
-		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		defer pool.Close()
-		if err := pgstore.Migrate(ctx, pool); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		store = pgstore.New(pool)
+	store, pool, err := openStore(ctx, cfg, memMode)
+	if err != nil {
+		return err
 	}
+	if pool != nil {
+		defer pool.Close()
+	}
+
+	dispatcher, err := openDispatcher(fakeDispatch, kubeconfig)
+	if err != nil {
+		return err
+	}
+
+	replayStore := openReplayStore(pool, memMode)
 
 	em := audit.NewStdoutEmitter("minos")
-
-	var dispatcher dispatch.Dispatcher
-	if *fakeDispatch {
-		dispatcher = fakedispatch.New()
-	} else {
-		d, err := k3s.NewFromKubeconfig(*kubeconfig)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		dispatcher = d
-	}
-
-	srv, err := core.New(*cfg, prov, store, dispatcher, em)
+	srv, err := core.New(*cfg, prov, store, dispatcher, em, core.WithReplayStore(replayStore))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
-
 	if err := srv.Run(ctx); err != nil && err != context.Canceled {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
+	return nil
+}
+
+// openStore returns the configured task store. pool is non-nil for the
+// Postgres path so the caller can share it with replay and close it.
+func openStore(ctx context.Context, cfg *core.Config, memMode bool) (storage.Store, *pgxpool.Pool, error) {
+	if memMode {
+		return memstore.New(nil), nil, nil
+	}
+	if cfg.DatabaseURL == "" {
+		return nil, nil, fmt.Errorf("database_url required unless -mem-store is set")
+	}
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := pgstore.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		return nil, nil, err
+	}
+	return pgstore.New(pool), pool, nil
+}
+
+func openDispatcher(fakeDispatch bool, kubeconfig string) (dispatch.Dispatcher, error) {
+	if fakeDispatch {
+		return fakedispatch.New(), nil
+	}
+	return k3s.NewFromKubeconfig(kubeconfig)
+}
+
+// openReplayStore picks the webhook delivery dedup backend. Window default
+// 24h covers GitHub's retry horizon; rows older get purged by operator cron.
+func openReplayStore(pool *pgxpool.Pool, memMode bool) ghverify.ReplayStore {
+	const window = 24 * time.Hour
+	if memMode || pool == nil {
+		return replay.NewMemStore(window)
+	}
+	return replay.NewPGStore(pool, "github", window)
 }

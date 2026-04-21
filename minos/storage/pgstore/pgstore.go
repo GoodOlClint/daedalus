@@ -70,7 +70,7 @@ INSERT INTO minos.tasks (
 func (s *Store) GetTask(ctx context.Context, id uuid.UUID) (*storage.Task, error) {
 	const q = `
 SELECT id, parent_id, project_id, task_type, backend, state, priority,
-       envelope, run_id, pod_name, created_at, started_at, finished_at
+       envelope, run_id, pod_name, created_at, started_at, finished_at, pr_url
 FROM minos.tasks WHERE id = $1`
 	row := s.pool.QueryRow(ctx, q, id)
 	task, err := scanTask(row)
@@ -84,7 +84,7 @@ FROM minos.tasks WHERE id = $1`
 func (s *Store) ListTasks(ctx context.Context, states []storage.State, limit int) ([]*storage.Task, error) {
 	q := `
 SELECT id, parent_id, project_id, task_type, backend, state, priority,
-       envelope, run_id, pod_name, created_at, started_at, finished_at
+       envelope, run_id, pod_name, created_at, started_at, finished_at, pr_url
 FROM minos.tasks`
 	args := []any{}
 	if len(states) > 0 {
@@ -170,6 +170,38 @@ func (s *Store) SetTaskRun(ctx context.Context, id, runID uuid.UUID, podName str
 	return nil
 }
 
+// SetTaskPR implements storage.Store.
+func (s *Store) SetTaskPR(ctx context.Context, id uuid.UUID, prURL string) error {
+	ct, err := s.pool.Exec(ctx,
+		`UPDATE minos.tasks SET pr_url = $1 WHERE id = $2`,
+		prURL, id,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("%w: pr url %q already bound", storage.ErrConflict, prURL)
+		}
+		return fmt.Errorf("pgstore: set pr: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("%w: %s", storage.ErrNotFound, id)
+	}
+	return nil
+}
+
+// FindTaskByPRURL implements storage.Store.
+func (s *Store) FindTaskByPRURL(ctx context.Context, prURL string) (*storage.Task, error) {
+	const q = `
+SELECT id, parent_id, project_id, task_type, backend, state, priority,
+       envelope, run_id, pod_name, created_at, started_at, finished_at, pr_url
+FROM minos.tasks WHERE pr_url = $1`
+	row := s.pool.QueryRow(ctx, q, prURL)
+	task, err := scanTask(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%w: pr %q", storage.ErrNotFound, prURL)
+	}
+	return task, err
+}
+
 func scanTask(r pgx.Row) (*storage.Task, error) {
 	var (
 		t          storage.Task
@@ -179,10 +211,11 @@ func scanTask(r pgx.Row) (*storage.Task, error) {
 		podName    *string
 		startedAt  *time.Time
 		finishedAt *time.Time
+		prURL      *string
 	)
 	if err := r.Scan(
 		&t.ID, &parentID, &t.ProjectID, &t.TaskType, &t.Backend, &t.State, &t.Priority,
-		&envJSON, &runID, &podName, &t.CreatedAt, &startedAt, &finishedAt,
+		&envJSON, &runID, &podName, &t.CreatedAt, &startedAt, &finishedAt, &prURL,
 	); err != nil {
 		return nil, err
 	}
@@ -198,6 +231,7 @@ func scanTask(r pgx.Row) (*storage.Task, error) {
 	t.PodName = podName
 	t.StartedAt = startedAt
 	t.FinishedAt = finishedAt
+	t.PRURL = prURL
 	return &t, nil
 }
 

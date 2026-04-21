@@ -11,17 +11,21 @@ import (
 
 	"github.com/google/uuid"
 
+	ghverify "github.com/GoodOlClint/daedalus/cerberus/verification/github"
 	"github.com/GoodOlClint/daedalus/minos/storage"
 	"github.com/GoodOlClint/daedalus/pkg/audit"
+	"github.com/GoodOlClint/daedalus/pkg/jwt"
 )
 
-// routes builds the HTTP handler for Minos's Slice A API.
+// routes builds the HTTP handler for Minos's API.
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.Handle("POST /tasks", s.requireAdmin(http.HandlerFunc(s.handleCreateTask)))
 	mux.Handle("GET /tasks", s.requireAdmin(http.HandlerFunc(s.handleListTasks)))
 	mux.Handle("GET /tasks/{id}", s.requireAdmin(http.HandlerFunc(s.handleGetTask)))
+	mux.Handle("POST /tasks/{id}/pr", s.requirePodAuth(http.HandlerFunc(s.handleReportPR)))
+	mux.HandleFunc("POST /webhooks/github", s.handleGithubWebhook)
 	return s.auditMiddleware(mux)
 }
 
@@ -39,6 +43,41 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 				"status": strconv.Itoa(rec.status),
 			},
 		})
+	})
+}
+
+// requirePodAuth gates pod-callback endpoints behind the pod's Minos-minted
+// bearer token (composed by Commission into envelope.Capabilities.McpAuthToken).
+// The token's subject is "task:<task_id>" and must match the {id} path value,
+// so a compromised pod cannot report against another task.
+func (s *Server) requirePodAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if bearer == "" || bearer == r.Header.Get("Authorization") {
+			writeError(w, http.StatusUnauthorized, "missing or malformed bearer")
+			return
+		}
+		secret, err := s.provider.Resolve(r.Context(), s.cfg.BearerSecretRef)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "resolve bearer secret")
+			return
+		}
+		claims, err := jwt.VerifyBearer(secret.Data, bearer)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "invalid bearer")
+			return
+		}
+		const prefix = "task:"
+		if !strings.HasPrefix(claims.Subject, prefix) {
+			writeError(w, http.StatusUnauthorized, "subject not task-scoped")
+			return
+		}
+		claimTaskID := strings.TrimPrefix(claims.Subject, prefix)
+		if claimTaskID != r.PathValue("id") {
+			writeError(w, http.StatusForbidden, "task id mismatch")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -128,6 +167,160 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, taskResponse(task))
+}
+
+// reportPRRequest is the body shape pods POST to /tasks/{id}/pr.
+type reportPRRequest struct {
+	PRURL string `json:"pr_url"`
+}
+
+// handleReportPR records the PR URL the pod opened so later GitHub
+// webhooks can resolve back to this task.
+func (s *Server) handleReportPR(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid task id")
+		return
+	}
+	var body reportPRRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode body: %v", err))
+		return
+	}
+	if body.PRURL == "" {
+		writeError(w, http.StatusBadRequest, "pr_url required")
+		return
+	}
+	if err := s.store.SetTaskPR(r.Context(), id, body.PRURL); err != nil {
+		switch {
+		case errors.Is(err, storage.ErrNotFound):
+			writeError(w, http.StatusNotFound, "task not found")
+		case errors.Is(err, storage.ErrConflict):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	s.audit.Emit(audit.Event{
+		Category: "task",
+		Outcome:  "pr-reported",
+		Fields:   map[string]string{"task_id": id.String(), "pr_url": body.PRURL},
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// githubPullRequestEvent is the subset of GitHub's pull_request event
+// payload Minos cares about for Phase 1 Slice B lifecycle transitions.
+type githubPullRequestEvent struct {
+	Action      string `json:"action"`
+	PullRequest struct {
+		HTMLURL string `json:"html_url"`
+		Merged  bool   `json:"merged"`
+	} `json:"pull_request"`
+}
+
+// handleGithubWebhook authenticates a GitHub webhook delivery, parses the
+// event, and drives the associated task's state machine. Only the subset
+// of events Phase 1 Slice B needs is handled here; unknown events are
+// acknowledged (200) but logged for visibility.
+func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
+	secret, err := s.provider.Resolve(r.Context(), s.cfg.GithubWebhookSecretRef)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "resolve webhook secret")
+		return
+	}
+	verifier := ghverify.NewVerifier(secret.Data, s.replayStore)
+	event, err := verifier.Verify(r.Context(), r)
+	if err != nil {
+		switch {
+		case errors.Is(err, ghverify.ErrInvalidSignature):
+			writeError(w, http.StatusUnauthorized, "invalid signature")
+		case errors.Is(err, ghverify.ErrMissingHeader):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, ghverify.ErrReplay):
+			// Accept + noop on replay per security.md §2 — GitHub retries
+			// on non-2xx, and we've already processed this delivery.
+			writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	switch event.Type {
+	case "pull_request":
+		s.handlePullRequestEvent(w, r, event.Body)
+	default:
+		s.audit.Emit(audit.Event{
+			Category: "webhook",
+			Outcome:  "unhandled-event",
+			Fields:   map[string]string{"type": event.Type, "delivery": event.DeliveryID},
+		})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "unhandled"})
+	}
+}
+
+// handlePullRequestEvent dispatches pull_request actions. Phase 1 Slice B
+// handles `closed` (merged → completed, unmerged → failed); other actions
+// (opened, synchronize, reopened, etc.) are noop until Slice C adds
+// respawn on review events.
+func (s *Server) handlePullRequestEvent(w http.ResponseWriter, r *http.Request, body []byte) {
+	var ev githubPullRequestEvent
+	if err := json.Unmarshal(body, &ev); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse pull_request: %v", err))
+		return
+	}
+	if ev.Action != "closed" {
+		s.audit.Emit(audit.Event{
+			Category: "webhook",
+			Outcome:  "pr-ignored",
+			Fields:   map[string]string{"action": ev.Action, "pr": ev.PullRequest.HTMLURL},
+		})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	task, err := s.store.FindTaskByPRURL(r.Context(), ev.PullRequest.HTMLURL)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			s.audit.Emit(audit.Event{
+				Category: "webhook",
+				Outcome:  "pr-no-task",
+				Fields:   map[string]string{"pr": ev.PullRequest.HTMLURL},
+			})
+			writeJSON(w, http.StatusOK, map[string]string{"status": "no-matching-task"})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// From StateRunning we can transition to completed or failed. If the
+	// task is already in a terminal state (e.g. earlier webhook delivery
+	// already finalized it), this is a noop.
+	if task.State == storage.StateCompleted || task.State == storage.StateFailed {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "already-terminal"})
+		return
+	}
+	target := storage.StateFailed
+	outcome := "pr-closed"
+	if ev.PullRequest.Merged {
+		target = storage.StateCompleted
+		outcome = "pr-merged"
+	}
+	if err := s.store.TransitionTask(r.Context(), task.ID, target); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.audit.Emit(audit.Event{
+		Category: "webhook",
+		Outcome:  outcome,
+		Fields: map[string]string{
+			"task_id": task.ID.String(),
+			"pr":      ev.PullRequest.HTMLURL,
+			"state":   string(target),
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": string(target)})
 }
 
 // taskResponse is the JSON shape the API returns for task records.
