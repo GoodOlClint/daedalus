@@ -1,4 +1,4 @@
-.PHONY: all build test vet lint fmt tidy clean dev-postgres dev-postgres-stop dev-k3d dev-k3d-stop plugin-claude-code plugin-shellcheck
+.PHONY: all build test vet lint fmt tidy clean dev-postgres dev-postgres-stop dev-k3d dev-k3d-stop plugin-claude-code plugin-shellcheck tf-fmt tf-validate tf-plan tf-apply tf-inventory
 
 GO := go
 LINTER := golangci-lint
@@ -58,3 +58,21 @@ plugin-claude-code:
 plugin-shellcheck:
 	bash -n agents/claude-code/entrypoint.sh
 	@command -v shellcheck >/dev/null && shellcheck agents/claude-code/entrypoint.sh || echo "shellcheck not installed; only bash -n ran"
+
+# Terraform
+
+tf-fmt:
+	cd terraform && terraform fmt -recursive
+
+tf-validate:
+	cd terraform && terraform init -backend=false -input=false && terraform validate
+
+tf-plan:
+	cd terraform && terraform plan
+
+tf-apply:
+	cd terraform && terraform apply
+
+tf-inventory:
+	cd terraform && terraform output -raw ansible_inventory_yaml > ../inventory.yaml
+	@echo "Wrote inventory.yaml"

@@ -1,0 +1,32 @@
+# Copy to vars.auto.tfvars (gitignored) and edit. Credentials are NEVER put
+# here — load them from TF_VAR_* environment variables in your shell:
+#
+#   export TF_VAR_proxmox_endpoint="https://crete.lan:8006/"
+#   export TF_VAR_proxmox_api_token='terraform@pve!daedalus=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+
+proxmox_node    = "crete"
+primary_datastore = "local-zfs"
+image_datastore   = "local"
+
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+admin_username      = "daedalus"
+timezone            = "America/Chicago"
+domain_suffix       = "daedalus.local"
+
+management_vlan = "mgmt"
+services_vlan   = "services"
+
+vlans = {
+  mgmt = {
+    vlan_id = 10
+    bridge  = "vmbr0"
+    subnet  = "10.10.0.0/24"
+  }
+  services = {
+    vlan_id = 40
+    bridge  = "vmbr0"
+    subnet  = "10.40.0.0/24"
+  }
+}
+
+dns_servers = ["1.1.1.1", "9.9.9.9"]
