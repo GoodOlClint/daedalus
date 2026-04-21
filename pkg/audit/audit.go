@@ -1,6 +1,6 @@
 // Package audit emits structured audit events to stdout in JSON. Vector on
 // each VM picks them up and forwards to Loki on Ariadne per architecture.md
-// §12. Every broker-side decision (MCP call, credential touch, termination,
+// §17. Every broker-side decision (MCP call, credential touch, termination,
 // warning) flows through an Emitter so the forensic surface is uniform.
 package audit
 

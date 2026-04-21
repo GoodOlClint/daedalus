@@ -1,6 +1,6 @@
 // Package provider defines the secret-provider interface Minos (Phase 1)
 // and Hecate (Phase 2) consume. The interface is deliberately minimal: four
-// operations per architecture.md §17 MVP Blockers — Secret provider.
+// operations per architecture.md §22 MVP Blockers — Secret provider.
 //
 // Phase 1 reference implementations live under minos/secrets/ (file-backed
 // default; Infisical for homelab deployments). Any implementation meeting

@@ -1,6 +1,6 @@
 // Package file implements the pkg/provider.Provider interface backed by a
 // local JSON file. It is the Phase 1 default secret provider per
-// architecture.md §17 MVP Blockers — Secret provider, intended for clean
+// architecture.md §22 MVP Blockers — Secret provider, intended for clean
 // installs and local development where no external secret store is running.
 //
 // Rotation and revocation semantics under the file provider are restart-

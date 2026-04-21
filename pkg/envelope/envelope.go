@@ -26,7 +26,7 @@ const (
 )
 
 // WorkspaceSize selects the pod's ephemeral disk tier; sizes map to repository
-// shapes per architecture.md §11 Workspace Sizing.
+// shapes per architecture.md §16 Workspace Sizing.
 type WorkspaceSize string
 
 const (

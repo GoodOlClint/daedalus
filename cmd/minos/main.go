@@ -9,15 +9,27 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/GoodOlClint/daedalus/minos/core"
 	"github.com/GoodOlClint/daedalus/minos/secrets/file"
+	"github.com/GoodOlClint/daedalus/minos/storage"
+	"github.com/GoodOlClint/daedalus/minos/storage/memstore"
+	"github.com/GoodOlClint/daedalus/minos/storage/pgstore"
 	"github.com/GoodOlClint/daedalus/pkg/audit"
 )
 
 func main() {
-	listen := flag.String("listen", ":8080", "address for the Minos HTTP API")
+	configPath := flag.String("config", "/etc/minos/config.json", "path to Minos daemon config")
 	providerPath := flag.String("provider", "/etc/minos/secrets.json", "path to the file-backed secret provider store")
+	memMode := flag.Bool("mem-store", false, "use in-memory task store (tests/local dev; no persistence across restart)")
 	flag.Parse()
+
+	cfg, err := core.LoadConfig(*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	prov, err := file.Open(*providerPath)
 	if err != nil {
@@ -25,19 +37,37 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	var store storage.Store
+	if *memMode {
+		store = memstore.New(nil)
+	} else {
+		if cfg.DatabaseURL == "" {
+			fmt.Fprintln(os.Stderr, "database_url required unless -mem-store is set")
+			os.Exit(1)
+		}
+		pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		defer pool.Close()
+		if err := pgstore.Migrate(ctx, pool); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		store = pgstore.New(pool)
+	}
+
 	em := audit.NewStdoutEmitter("minos")
 
-	srv, err := core.New(core.Config{
-		ListenAddr:   *listen,
-		ProviderPath: *providerPath,
-	}, prov, em)
+	srv, err := core.New(*cfg, prov, store, em)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	if err := srv.Run(ctx); err != nil && err != context.Canceled {
 		fmt.Fprintln(os.Stderr, err)
