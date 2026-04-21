@@ -14,6 +14,7 @@ import (
 
 	ghverify "github.com/GoodOlClint/daedalus/cerberus/verification/github"
 	hermescore "github.com/GoodOlClint/daedalus/hermes/core"
+	mnemocore "github.com/GoodOlClint/daedalus/mnemosyne/core"
 	"github.com/GoodOlClint/daedalus/minos/storage"
 	"github.com/GoodOlClint/daedalus/pkg/audit"
 	"github.com/GoodOlClint/daedalus/pkg/jwt"
@@ -28,6 +29,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET /tasks/{id}", s.requireAdmin(http.HandlerFunc(s.handleGetTask)))
 	mux.Handle("POST /tasks/{id}/pr", s.requirePodAuth(http.HandlerFunc(s.handleReportPR)))
 	mux.Handle("POST /tasks/{id}/heartbeat", s.requirePodAuth(http.HandlerFunc(s.handleHeartbeat)))
+	mux.Handle("POST /tasks/{id}/memory", s.requirePodAuth(http.HandlerFunc(s.handleReportMemory)))
 	mux.HandleFunc("POST /webhooks/github", s.handleGithubWebhook)
 	return s.auditMiddleware(mux)
 }
@@ -226,6 +228,103 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		s.argus.Heartbeat(id)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// reportMemoryRequest is the body shape pods POST to /tasks/{id}/memory.
+type reportMemoryRequest struct {
+	Outcome string          `json:"outcome"`
+	Summary string          `json:"summary"`
+	Body    json.RawMessage `json:"body"`
+}
+
+// handleReportMemory persists the pod's run record via Mnemosyne.
+// Sanitization runs here against the pod's injected credentials and the
+// minted bearer so no credential value lands in the persisted record.
+func (s *Server) handleReportMemory(w http.ResponseWriter, r *http.Request) {
+	if s.mnemosyne == nil {
+		writeError(w, http.StatusServiceUnavailable, "mnemosyne not configured")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid task id")
+		return
+	}
+	var body reportMemoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode body: %v", err))
+		return
+	}
+	task, err := s.store.GetTask(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "task not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	known := s.collectKnownSecrets(r.Context(), task)
+	sanitized := mnemocore.Sanitize(body.Body, known)
+
+	runID := uuid.Nil
+	if task.RunID != nil {
+		runID = *task.RunID
+	}
+	outcome := mnemocore.Outcome(body.Outcome)
+	switch outcome {
+	case mnemocore.OutcomeCompleted, mnemocore.OutcomeFailed, mnemocore.OutcomeTerminated:
+		// ok
+	default:
+		outcome = mnemocore.OutcomeCompleted
+	}
+
+	err = s.mnemosyne.StoreRun(r.Context(), &mnemocore.RunRecord{
+		TaskID:    id,
+		RunID:     runID,
+		ProjectID: task.ProjectID,
+		TaskType:  string(task.TaskType),
+		Outcome:   outcome,
+		Summary:   body.Summary,
+		Body:      sanitized,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.audit.Emit(audit.Event{
+		Category: "mnemosyne",
+		Outcome:  "stored",
+		Fields:   map[string]string{"task_id": id.String(), "outcome": string(outcome)},
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// collectKnownSecrets returns the set of plaintext values that the pod
+// had access to, so Sanitize can redact them from the persisted run
+// record. Includes the pod's bearer token (if resolvable) plus every
+// InjectedCredential the envelope declared.
+func (s *Server) collectKnownSecrets(ctx context.Context, task *storage.Task) [][]byte {
+	var out [][]byte
+	if task == nil || task.Envelope == nil {
+		return out
+	}
+	for _, ic := range task.Envelope.Capabilities.InjectedCredentials {
+		if ic.CredentialsRef == "" {
+			continue
+		}
+		v, err := s.provider.Resolve(ctx, ic.CredentialsRef)
+		if err == nil && v != nil && len(v.Data) > 0 {
+			dup := make([]byte, len(v.Data))
+			copy(dup, v.Data)
+			out = append(out, dup)
+		}
+	}
+	if tok := task.Envelope.Capabilities.McpAuthToken; tok != "" {
+		out = append(out, []byte(tok))
+	}
+	return out
 }
 
 // githubPullRequestEvent is the subset of GitHub's pull_request event

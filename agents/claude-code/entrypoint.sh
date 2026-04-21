@@ -143,4 +143,27 @@ else
 fi
 
 flush_memory "completed" "$PR_URL"
+
+# Ship the sanitized run record to Mnemosyne via Minos. Minos sanitizes
+# again server-side against the pod's injected credentials; this client
+# side just packages what the entrypoint knows.
+if [[ -n "$DAEDALUS_MINOS_URL" && -n "${MCP_AUTH_TOKEN:-}" && -f "$DAEDALUS_MEMORY_DIR/run-record.json" ]]; then
+  log "posting memory blob to Mnemosyne"
+  memory_payload=$(jq -n \
+    --arg outcome "completed" \
+    --arg summary "${RUN_SUMMARY:-}" \
+    --argjson body "$(cat "$DAEDALUS_MEMORY_DIR/run-record.json")" \
+    '{outcome: $outcome, summary: $summary, body: $body}')
+  memory_status=$(curl -sS -o /tmp/memory-response -w '%{http_code}' \
+    -X POST \
+    -H "Authorization: Bearer $MCP_AUTH_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "$memory_payload" \
+    "$DAEDALUS_MINOS_URL/tasks/$DAEDALUS_TASK_ID/memory" \
+    || echo "000")
+  if [[ "$memory_status" != "200" ]]; then
+    log "WARN: memory POST returned $memory_status: $(cat /tmp/memory-response 2>/dev/null)"
+  fi
+fi
+
 log "done"

@@ -119,6 +119,21 @@ func (s *Server) Commission(ctx context.Context, req CommissionRequest) (*storag
 		acceptance = json.RawMessage(`{}`)
 	}
 
+	var contextRef *string
+	if s.mnemosyne != nil {
+		if mctx, err := s.mnemosyne.GetContext(ctx, proj.ID, string(req.TaskType)); err == nil && mctx != nil {
+			ref := mctx.Ref
+			contextRef = &ref
+		} else if err != nil {
+			s.audit.Emit(audit.Event{
+				Category: "mnemosyne",
+				Outcome:  "get-context-failed",
+				Message:  err.Error(),
+				Fields:   map[string]string{"project": proj.ID, "task_type": string(req.TaskType)},
+			})
+		}
+	}
+
 	env := &envelope.Envelope{
 		SchemaVersion: envelope.SchemaVersion,
 		ID:            taskID.String(),
@@ -138,6 +153,9 @@ func (s *Server) Commission(ctx context.Context, req CommissionRequest) (*storag
 	if req.Parent != nil {
 		pid := req.Parent.String()
 		env.ParentID = &pid
+	}
+	if contextRef != nil {
+		env.ContextRef = contextRef
 	}
 	if err := envelope.Validate(env); err != nil {
 		return nil, fmt.Errorf("commission: envelope: %w", err)

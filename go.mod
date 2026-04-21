@@ -3,6 +3,7 @@ module github.com/GoodOlClint/daedalus
 go 1.25.0
 
 require (
+	github.com/bwmarrin/discordgo v0.29.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
@@ -14,7 +15,6 @@ require (
 )
 
 require (
-	github.com/bwmarrin/discordgo v0.29.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect

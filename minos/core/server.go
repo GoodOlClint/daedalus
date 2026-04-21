@@ -13,6 +13,7 @@ import (
 
 	ghverify "github.com/GoodOlClint/daedalus/cerberus/verification/github"
 	hermescore "github.com/GoodOlClint/daedalus/hermes/core"
+	mnemocore "github.com/GoodOlClint/daedalus/mnemosyne/core"
 	"github.com/GoodOlClint/daedalus/minos/argus"
 	"github.com/GoodOlClint/daedalus/minos/dispatch"
 	"github.com/GoodOlClint/daedalus/minos/storage"
@@ -30,6 +31,7 @@ type Server struct {
 	replayStore ghverify.ReplayStore
 	hermes      *hermescore.Broker
 	argus       *argus.Argus
+	mnemosyne   mnemocore.Store
 	namespace   string
 	now         func() time.Time
 }
@@ -70,6 +72,14 @@ func WithHermes(h *hermescore.Broker) Option {
 // When nil, Argus enforcement is disabled (Slice A posture).
 func WithArgus(a *argus.Argus) Option {
 	return func(s *Server) { s.argus = a }
+}
+
+// WithMnemosyne wires the memory service so Commission populates
+// envelope.ContextRef with assembled prior-run context, and the
+// POST /tasks/{id}/memory endpoint persists the pod's run record
+// (sanitized). When nil, commissions omit context and memory POSTs 404.
+func WithMnemosyne(m mnemocore.Store) Option {
+	return func(s *Server) { s.mnemosyne = m }
 }
 
 // New returns a Server wired with its dependencies. It does not start any

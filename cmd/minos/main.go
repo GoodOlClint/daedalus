@@ -16,6 +16,9 @@ import (
 	ghverify "github.com/GoodOlClint/daedalus/cerberus/verification/github"
 	hermescore "github.com/GoodOlClint/daedalus/hermes/core"
 	hermesdiscord "github.com/GoodOlClint/daedalus/hermes/plugins/discord"
+	mnemocore "github.com/GoodOlClint/daedalus/mnemosyne/core"
+	mnemomem "github.com/GoodOlClint/daedalus/mnemosyne/memstore"
+	mnemopg "github.com/GoodOlClint/daedalus/mnemosyne/pgstore"
 	"github.com/GoodOlClint/daedalus/minos/argus"
 	"github.com/GoodOlClint/daedalus/minos/core"
 	"github.com/GoodOlClint/daedalus/minos/dispatch"
@@ -82,7 +85,9 @@ func run(configPath, providerPath string, memMode, fakeDispatch bool, kubeconfig
 		return fmt.Errorf("argus: %w", err)
 	}
 
-	opts := []core.Option{core.WithReplayStore(replayStore), core.WithArgus(a)}
+	mnemosyne := openMnemosyne(pool, memMode)
+
+	opts := []core.Option{core.WithReplayStore(replayStore), core.WithArgus(a), core.WithMnemosyne(mnemosyne)}
 	if hermes != nil {
 		opts = append(opts, core.WithHermes(hermes))
 	}
@@ -171,4 +176,13 @@ func openReplayStore(pool *pgxpool.Pool, memMode bool) ghverify.ReplayStore {
 		return replay.NewMemStore(window)
 	}
 	return replay.NewPGStore(pool, "github", window)
+}
+
+// openMnemosyne picks the memory backend to match the task store: memstore
+// when running with -mem-store, pgstore when a shared Postgres pool is up.
+func openMnemosyne(pool *pgxpool.Pool, memMode bool) mnemocore.Store {
+	if memMode || pool == nil {
+		return mnemomem.New()
+	}
+	return mnemopg.New(pool)
 }
