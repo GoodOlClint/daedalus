@@ -14,6 +14,8 @@ import (
 
 	"github.com/GoodOlClint/daedalus/cerberus/core/replay"
 	ghverify "github.com/GoodOlClint/daedalus/cerberus/verification/github"
+	hermescore "github.com/GoodOlClint/daedalus/hermes/core"
+	hermesdiscord "github.com/GoodOlClint/daedalus/hermes/plugins/discord"
 	"github.com/GoodOlClint/daedalus/minos/core"
 	"github.com/GoodOlClint/daedalus/minos/dispatch"
 	"github.com/GoodOlClint/daedalus/minos/dispatch/fakedispatch"
@@ -68,14 +70,62 @@ func run(configPath, providerPath string, memMode, fakeDispatch bool, kubeconfig
 	replayStore := openReplayStore(pool, memMode)
 
 	em := audit.NewStdoutEmitter("minos")
-	srv, err := core.New(*cfg, prov, store, dispatcher, em, core.WithReplayStore(replayStore))
+
+	hermes, err := openHermes(ctx, cfg, prov)
 	if err != nil {
 		return err
 	}
+
+	opts := []core.Option{core.WithReplayStore(replayStore)}
+	if hermes != nil {
+		opts = append(opts, core.WithHermes(hermes))
+	}
+
+	srv, err := core.New(*cfg, prov, store, dispatcher, em, opts...)
+	if err != nil {
+		return err
+	}
+
+	if hermes != nil {
+		if err := hermes.Start(ctx); err != nil {
+			return fmt.Errorf("start hermes: %w", err)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = hermes.Stop(shutdownCtx)
+		}()
+	}
+
 	if err := srv.Run(ctx); err != nil && err != context.Canceled {
 		return err
 	}
 	return nil
+}
+
+// openHermes wires the Hermes broker and registers whichever surface
+// plugins the config enables. Returns nil when no plugin is configured —
+// Minos runs CLI-only in that case.
+func openHermes(ctx context.Context, cfg *core.Config, prov *file.Provider) (*hermescore.Broker, error) {
+	if cfg.Discord.BotTokenRef == "" || cfg.Project.ThreadParent == "" {
+		return nil, nil
+	}
+	tokenVal, err := prov.Resolve(ctx, cfg.Discord.BotTokenRef)
+	if err != nil {
+		return nil, fmt.Errorf("resolve discord token: %w", err)
+	}
+	plugin, err := hermesdiscord.New(hermesdiscord.Config{
+		Token:          string(tokenVal.Data),
+		WatchChannelID: cfg.Project.ThreadParent,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("discord plugin: %w", err)
+	}
+	broker := hermescore.New()
+	if err := broker.RegisterPlugin(plugin); err != nil {
+		return nil, fmt.Errorf("register discord plugin: %w", err)
+	}
+	return broker, nil
 }
 
 // openStore returns the configured task store. pool is non-nil for the

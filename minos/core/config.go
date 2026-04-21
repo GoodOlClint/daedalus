@@ -24,6 +24,9 @@ type Config struct {
 	MinosPodURL string        `json:"minos_pod_url"`
 	Admin       AdminIdentity `json:"admin"`
 	Project     ProjectConfig `json:"project"`
+	// Discord holds credentials for the Phase 1 Discord Hermes plugin.
+	// Zero-value means the plugin is not wired.
+	Discord DiscordConfig `json:"discord"`
 }
 
 // AdminIdentity is the single hardcoded admin tuple checked at command
@@ -31,6 +34,15 @@ type Config struct {
 type AdminIdentity struct {
 	Surface   string `json:"surface"`
 	SurfaceID string `json:"surface_id"`
+}
+
+// DiscordConfig carries the credentials and channel IDs the Discord
+// Hermes plugin needs. Empty values mean "no Discord plugin"; cmd/minos
+// skips wiring Hermes in that case.
+type DiscordConfig struct {
+	// BotTokenRef is the secret provider reference whose value is the
+	// Discord bot token.
+	BotTokenRef string `json:"bot_token_ref"`
 }
 
 // ProjectConfig holds the single-project defaults that feed envelope
