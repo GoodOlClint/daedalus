@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	hermescore "github.com/GoodOlClint/daedalus/hermes/core"
+	"github.com/GoodOlClint/daedalus/minos/storage"
 	"github.com/GoodOlClint/daedalus/pkg/audit"
 	"github.com/GoodOlClint/daedalus/pkg/envelope"
 )
@@ -85,13 +86,23 @@ func ParseCommissionCommand(text string) (CommissionRequest, error) {
 
 // handleInbound is the hermes InboundHandler Minos subscribes at startup
 // when Hermes is wired in. It accepts only messages from the configured
-// admin identity and passes /commission messages to the Commission path.
+// admin identity and dispatches /commission and /status commands.
 func (s *Server) handleInbound(ctx context.Context, msg hermescore.InboundMessage) {
 	if s.cfg.Admin.Surface == "" || s.cfg.Admin.SurfaceID == "" {
 		return
 	}
 	if msg.Surface != s.cfg.Admin.Surface || msg.SurfaceUserID != s.cfg.Admin.SurfaceID {
 		// Non-admin — ignore (Phase 1 single-admin posture).
+		return
+	}
+	trimmed := strings.TrimSpace(msg.Content)
+	// /status: list recent tasks — the Phase 1 minimum for "what's
+	// running?" per gate bullet 2. Iris-as-pod (with Ollama) refines
+	// this into true conversational state queries.
+	if trimmed == "/status" || strings.HasPrefix(trimmed, "/status ") ||
+		strings.EqualFold(trimmed, "what's running?") ||
+		strings.EqualFold(trimmed, "what is running?") {
+		s.handleStatusQuery(ctx, msg)
 		return
 	}
 	req, err := ParseCommissionCommand(msg.Content)
@@ -141,5 +152,44 @@ func (s *Server) handleInbound(ctx context.Context, msg hermescore.InboundMessag
 		Category: "intake",
 		Outcome:  "commissioned",
 		Fields:   map[string]string{"task_id": task.ID.String(), "user": msg.SurfaceUserID},
+	})
+}
+
+// handleStatusQuery replies to "what's running?" with a compact summary
+// of active tasks: queued, running, and awaiting-review. Phase 1 minimum
+// for gate bullet 2 — Iris-as-pod deepens this into a conversational
+// surface in Slice E proper.
+func (s *Server) handleStatusQuery(ctx context.Context, msg hermescore.InboundMessage) {
+	active := []storage.State{storage.StateQueued, storage.StateRunning, storage.StateAwaitingReview}
+	tasks, err := s.store.ListTasks(ctx, active, 20)
+	if err != nil {
+		s.reply(ctx, msg, fmt.Sprintf("status failed: %s", err.Error()))
+		return
+	}
+	if len(tasks) == 0 {
+		s.reply(ctx, msg, "no active tasks")
+		return
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("%d active task(s):\n", len(tasks)))
+	for _, t := range tasks {
+		summary := ""
+		if t.Envelope != nil {
+			summary = t.Envelope.Brief.Summary
+		}
+		b.WriteString(fmt.Sprintf("- %s [%s] %s\n", t.ID.String()[:8], t.State, summary))
+	}
+	s.reply(ctx, msg, b.String())
+}
+
+// reply posts a thread message back to the originating surface when a
+// broker + thread_ref are available.
+func (s *Server) reply(ctx context.Context, msg hermescore.InboundMessage, content string) {
+	if s.hermes == nil || msg.ThreadRef == "" {
+		return
+	}
+	_ = s.hermes.PostToThread(ctx, msg.Surface, msg.ThreadRef, hermescore.Message{
+		Kind:    hermescore.KindStatus,
+		Content: content,
 	})
 }

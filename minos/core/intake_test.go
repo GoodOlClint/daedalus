@@ -3,12 +3,14 @@ package core_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	hermescore "github.com/GoodOlClint/daedalus/hermes/core"
 	"github.com/GoodOlClint/daedalus/minos/core"
 	"github.com/GoodOlClint/daedalus/minos/storage"
+	"github.com/GoodOlClint/daedalus/pkg/envelope"
 )
 
 func TestParseCommissionHappy(t *testing.T) {
@@ -120,6 +122,94 @@ func TestIntakeIgnoresNonAdmin(t *testing.T) {
 	tasks, _ := kit.store.ListTasks(context.Background(), nil, 0)
 	if len(tasks) != 0 {
 		t.Errorf("expected 0 tasks from non-admin, got %d", len(tasks))
+	}
+}
+
+func TestIntakeStatusQuery(t *testing.T) {
+	kit, plug := newTestServerWithHermes(t)
+
+	// Commission a task so there's something to report.
+	task, err := kit.server.Commission(context.Background(), core.CommissionRequest{
+		TaskType:  envelope.TaskTypeCode,
+		Brief:     envelope.Brief{Summary: "widget fix"},
+		Execution: core.ExecutionRequest{RepoURL: "https://example.com/r", Branch: "fix/w"},
+	})
+	if err != nil {
+		t.Fatalf("commission: %v", err)
+	}
+
+	// Admin asks in a known thread.
+	threadRef, err := plug.CreateThread(context.Background(), hermescore.CreateThreadRequest{
+		Parent: "channel-ops", Title: "status-probe", Opener: "hi",
+	})
+	if err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	if err := plug.Deliver(context.Background(), hermescore.InboundMessage{
+		Surface:       "discord",
+		SurfaceUserID: "admin-id",
+		ThreadRef:     threadRef,
+		Timestamp:     time.Now().UTC(),
+		Content:       "/status",
+	}); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+
+	// Find the reply in the probe thread.
+	var replied string
+	for _, th := range plug.Threads() {
+		if th.Ref != threadRef {
+			continue
+		}
+		for _, p := range th.Posts {
+			if p.Kind == hermescore.KindStatus {
+				replied = p.Content
+			}
+		}
+	}
+	if replied == "" {
+		t.Fatal("no status reply posted")
+	}
+	if !strings.Contains(replied, "widget fix") {
+		t.Errorf("status reply missing task summary: %q", replied)
+	}
+	if !strings.Contains(replied, task.ID.String()[:8]) {
+		t.Errorf("status reply missing task id prefix: %q", replied)
+	}
+}
+
+func TestIntakeNaturalLanguageStatus(t *testing.T) {
+	kit, plug := newTestServerWithHermes(t)
+	threadRef, err := plug.CreateThread(context.Background(), hermescore.CreateThreadRequest{
+		Parent: "channel-ops", Title: "probe", Opener: "hi",
+	})
+	if err != nil {
+		t.Fatalf("thread: %v", err)
+	}
+	_ = kit // unused but keeps the kit alive for the server lifetime
+	if err := plug.Deliver(context.Background(), hermescore.InboundMessage{
+		Surface:       "discord",
+		SurfaceUserID: "admin-id",
+		ThreadRef:     threadRef,
+		Timestamp:     time.Now().UTC(),
+		Content:       "What's running?",
+	}); err != nil {
+		t.Fatalf("deliver: %v", err)
+	}
+	// Should get a reply ("no active tasks" since none commissioned).
+	found := false
+	for _, th := range plug.Threads() {
+		if th.Ref != threadRef {
+			continue
+		}
+		for _, p := range th.Posts {
+			if p.Kind == hermescore.KindStatus && strings.Contains(p.Content, "no active tasks") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected natural-language status to produce a reply")
 	}
 }
 
