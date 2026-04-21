@@ -44,15 +44,21 @@ The architecture is designed to evolve from a single-agent system toward a multi
 | **Argus** | Watcher process — monitors agent behavior, enforces guardrails, detects drift, escalates or terminates | Runs alongside Minos | 1 (logic bundled into Minos); 2 (extracted as its own service with push-event ingest); 3 (drift detection, message signing) |
 | **Apollo** | External LLM broker — fronts all external LLM API calls (Anthropic, OpenAI, Google, etc.); per-provider plugins; centralized API key management, usage tracking, rate limiting, audit; provides non-forgeable usage metrics to Argus | Runs alongside Minos | 2 |
 | **Hecate** | Credentials broker — holds credential material, enforces Minos-managed ACLs on every fetch, and serves credentials to pods and Minos-VM broker subprocesses over JWT-authenticated MCP. Replaces Phase 1's Minos-direct push injection once JWT MCP broker auth lands. | Runs alongside Minos | 2 |
+| **Themis** | Project management pod — owns the backlog, decomposes epics into tasks, tracks cross-pod work state, and serves as the routing point for Argus escalations and human-in-the-loop confirmations. Calls Minos's task API to commission work; does not replace Minos's lifecycle/dispatch role. | Pod in Labyrinth | 2 |
+| **Momus** | Code review pod — automated PR review for style, correctness, logic, and architectural drift. Two-stage: local model does full sweep on every PR; items above a confidence threshold escalate through Apollo. Triages before human review rather than replacing it. | Pods in Labyrinth | 2 |
+| **Clio** | Documentation pod — generates and maintains READMEs, API docs, changelogs, and ADRs. Consumes commit history and Momus review output as primary inputs. | Pods in Labyrinth | 2 |
+| **Prometheus** | DevOps / release pod — pipeline configuration, environment promotion, versioning, artifact publication, release orchestration. Owns the *how it ships* layer, separated from implementation so release logic does not pollute application code. | Pods in Labyrinth | 2 |
+| **Hephaestus** | Architectural assistant — drafts ADRs, surfaces coupling and structural concerns, visualizes topology, presents tradeoffs for human decision. Produces draft artifacts only; does not make autonomous architectural decisions or mutate code or infra. | Pods in Labyrinth | 2 |
 | **Pythia** | Research pods — short-lived, broad internet egress, read-only; invoked by Daedalus agents via the research MCP broker | Pods in Labyrinth | 3 |
 | **Talos** | QA/test pods — provision test environments, exercise features, run integration suites, report results; invoked by Daedalus agents or directly by Minos | Pods in Labyrinth | 3 |
 | **Charon** | Egress proxy — hostname-layer allowlist enforcement for pod egress, per-pod-class policies, request audit to Ariadne | LXC on Crete | 3 |
 | **Asclepius** | Infrastructure health monitor — watches every Daedalus service and host for liveness, readiness, and resource health; alerts and attempts auto-remediation | LXC on Crete | 3 |
-| **Minotaur** | Sandboxed destructive test runner — intentionally breaks things inside isolated workspaces to validate recovery | Pod in Labyrinth | 3 |
+| **Minotaur** | Red team pod — adversarial reasoning against Daedalus itself. Finds non-obvious attack paths, chains vulnerabilities, probes prompt injection against internal agents and MCP brokers. Distinct from a pattern-based security scanner; the work is novel-judgment adversarial synthesis. | Pod in Labyrinth | 3 |
+| **Typhon** | Sandboxed destructive test runner — intentionally breaks things inside isolated workspaces to validate recovery automation. Chaos-engineering counterpart to Minotaur's adversarial reasoning: Typhon breaks infrastructure and code paths; Minotaur breaks agents. | Pod in Labyrinth | 3 |
 
 ### Naming Notes
 
-The project umbrella is **Daedalus** — the master craftsman whose works encompass everything built here. Individual agents are also called Daedalus instances; the agents are the builders. Minos is the commissioner who directs their work. Argus is the all-seeing watcher who ensures they stay on course. The Labyrinth is the structure built on Crete where the work happens. Ariadne holds the thread — the record of what happened inside the Labyrinth, available when operators need to retrace an incident. Pythia is the oracle of Delphi — she answers questions but does not act. When Daedalus needs to research something beyond its egress boundary, it sends the question to Pythia. Mnemosyne is the Titaness of memory, mother of the Muses — she retains what the agents have learned across runs, so that nothing hard-won is lost when a pod tears down. Hermes is the messenger of the gods, carrying messages between realms — the Hermes broker carries human-facing messages between Daedalus and whichever chat surface (Discord, Slack, Teams, Telegram) a project uses. Charon is the ferryman across the Styx, taking payment from travelers to cross the boundary — the Charon proxy checks each pod's credentials before letting its requests pass out to the public internet. Cerberus is the three-headed guard at the gate of Hades — the Cerberus broker checks every inbound request, verifies credentials, and refuses unauthorized passage. Iris is the rainbow goddess who carried messages between the divine and mortal realms, translating what she carried so each side understood — the Iris agent does the same between human conversation and Daedalus's structured operations. Asclepius is the god of medicine and healing — the Asclepius service watches the health of every component in the system, alerts when something falls ill, and treats what it can. Apollo is the god of oracles — external LLM APIs are the remote oracles Daedalus agents consult, and the Apollo broker is the service that carries their queries and counts what comes back. Hecate is the goddess of keys, boundaries, and crossroads — her standard epithet *Kleidouchos* means "key-bearer"; the Hecate broker holds credential material and decides, per Minos-set ACLs, which caller may fetch which key.
+The project umbrella is **Daedalus** — the master craftsman whose works encompass everything built here. Individual agents are also called Daedalus instances; the agents are the builders. Minos is the commissioner who directs their work. Argus is the all-seeing watcher who ensures they stay on course. The Labyrinth is the structure built on Crete where the work happens. Ariadne holds the thread — the record of what happened inside the Labyrinth, available when operators need to retrace an incident. Pythia is the oracle of Delphi — she answers questions but does not act. When Daedalus needs to research something beyond its egress boundary, it sends the question to Pythia. Mnemosyne is the Titaness of memory, mother of the Muses — she retains what the agents have learned across runs, so that nothing hard-won is lost when a pod tears down. Hermes is the messenger of the gods, carrying messages between realms — the Hermes broker carries human-facing messages between Daedalus and whichever chat surface (Discord, Slack, Teams, Telegram) a project uses. Charon is the ferryman across the Styx, taking payment from travelers to cross the boundary — the Charon proxy checks each pod's credentials before letting its requests pass out to the public internet. Cerberus is the three-headed guard at the gate of Hades — the Cerberus broker checks every inbound request, verifies credentials, and refuses unauthorized passage. Iris is the rainbow goddess who carried messages between the divine and mortal realms, translating what she carried so each side understood — the Iris agent does the same between human conversation and Daedalus's structured operations. Asclepius is the god of medicine and healing — the Asclepius service watches the health of every component in the system, alerts when something falls ill, and treats what it can. Apollo is the god of oracles — external LLM APIs are the remote oracles Daedalus agents consult, and the Apollo broker is the service that carries their queries and counts what comes back. Hecate is the goddess of keys, boundaries, and crossroads — her standard epithet *Kleidouchos* means "key-bearer"; the Hecate broker holds credential material and decides, per Minos-set ACLs, which caller may fetch which key. Themis is the goddess of divine order, proper procedure, and right timing — the Themis pod owns the backlog and decomposes work so that what Daedalus builds arrives in the correct sequence. Momus is the god of criticism and fault-finding, whose mythological function was identifying flaws in the work of other gods — the Momus pod reviews PRs. Clio is the Muse of history and record-keeping — the Clio pod writes and maintains project documentation. Prometheus is the titan who brought capability into the world and enabled everything else to function — the Prometheus pod owns release engineering, the layer that takes built software and makes it reach production. Hephaestus is the master craftsman of the gods who built the divine infrastructure and created autonomous constructs — Daedalus's divine counterpart, and the Hephaestus pod is the architectural assistant, drafting decisions rather than making them. Minotaur is the monster kept in the Labyrinth — the Minotaur pod is the adversarial agent that prowls the Labyrinth looking for weaknesses in Daedalus itself. Typhon is the primordial monster of chaos and storms — the Typhon pod is the destructive test runner, breaking infrastructure and code paths on purpose to validate that recovery works.
 
 **Icarus** is not a component. It is the post-mortem document written when a Daedalus agent ignores Argus and affects something it should not have.
 
@@ -98,7 +104,7 @@ Phase 2 and Phase 3 adjustments (Apollo/Argus extraction, Charon LXC, Asclepius 
 
 Crete connects to the homelab switch via a single trunked port carrying all required VLANs. Internal traffic between Daedalus guests (Minos ↔ Labyrinth, Minos ↔ Postgres LXC, Minos ↔ Ariadne) traverses Proxmox virtual bridges and never leaves the host. Traffic leaving Crete (to Athena, to external GitHub/Discord, inbound webhooks) is gated at each guest's vNIC by the Proxmox firewall, which holds each guest's egress allowlist and inbound rules.
 
-For the Labyrinth VM, Proxmox firewall enforces the *union* allowlist — everything any pod class or k3s system component needs. Per-pod-class differentiation (narrow Daedalus egress vs broad Pythia egress in Phase 2) happens inside the VM via a host firewall and k3s NetworkPolicy; see §11.
+For the Labyrinth VM, Proxmox firewall enforces the *union* allowlist — everything any pod class or k3s system component needs. Per-pod-class differentiation (narrow Daedalus egress vs broad Pythia egress in Phase 2) happens inside the VM via a host firewall and k3s NetworkPolicy; see §16.
 
 The homelab's edge firewall remains in place for broader VLAN policy and ingress routing, but Daedalus does not depend on specific rules there for its own isolation — the project is self-contained on Crete.
 
@@ -144,7 +150,7 @@ Operators issue these via any configured Hermes surface. Minos validates operato
 
 ### Development Sandboxes
 
-Daedalus agents developing code that targets Athena — the mlx-server implementation, custom inference service variants, alternate embedding models — need a way to exercise work-in-progress on Athena's real hardware without touching production services. The Athena MCP exposes a sandbox surface for this, scheduled for **Phase 3**. Sandboxes depend on per-pod source scoping at the k3s NetworkPolicy layer (so only the pod that created a sandbox may reach it), which itself is a Phase 3 capability (see §11 Network Isolation) — shipping sandboxes earlier would leave them VM-granular-reachable by any pod in Labyrinth.
+Daedalus agents developing code that targets Athena — the mlx-server implementation, custom inference service variants, alternate embedding models — need a way to exercise work-in-progress on Athena's real hardware without touching production services. The Athena MCP exposes a sandbox surface for this, scheduled for **Phase 3**. Sandboxes depend on per-pod source scoping at the k3s NetworkPolicy layer (so only the pod that created a sandbox may reach it), which itself is a Phase 3 capability (see §16 Network Isolation) — shipping sandboxes earlier would leave them VM-granular-reachable by any pod in Labyrinth.
 
 **Lifecycle:**
 
@@ -726,7 +732,7 @@ Argus enforces a tiered response:
 
 1. **Warning** — agent is approaching a threshold. Post to the task thread. Continue.
 2. **Escalation** — agent has exceeded threshold or has not heartbeated in N minutes. Ping human on their configured surface. Pause agent.
-3. **Termination** — hard guardrail triggered (e.g., MCP broker rejects a call outside the agent's scope). Issue k3s delete with `terminationGracePeriodSeconds: 30`. The plugin receives SIGTERM and has 30 seconds to flush memory extraction before SIGKILL. Post incident to the task thread. (Phase 3 triggers a workspace volume snapshot before delete; see §16.)
+3. **Termination** — hard guardrail triggered (e.g., MCP broker rejects a call outside the agent's scope). Issue k3s delete with `terminationGracePeriodSeconds: 30`. The plugin receives SIGTERM and has 30 seconds to flush memory extraction before SIGKILL. Post incident to the task thread. (Phase 3 triggers a workspace volume snapshot before delete; see §21.)
 
 ### Availability
 
@@ -1154,7 +1160,231 @@ Additional Phase 3+ directions:
 
 ---
 
-## 11. Labyrinth — k3s Workspace Cluster
+## 11. Themis — Project Management Pod
+
+**Phase:** Entire section is **Phase 2**. Phase 1's single-project hardcoded configuration in Minos plus Iris's NL commissioning path cover the operator's immediate orchestration needs; Themis lands when the backlog grows past what a human can track in a chat thread and when multiple pod classes (Momus, Clio, Prometheus) need cross-pod coordination.
+
+### Role
+
+Themis is the project management pod. It owns the backlog, decomposes epics into tasks of the schema defined in §8, tracks work state across pod classes, and serves as the routing point for Argus escalations and human-in-the-loop confirmations.
+
+Themis **does not replace Minos.** Minos remains the control plane: it holds the project registry, mints credentials, spawns pods, composes MCP sets, and owns the lifecycle state machine. Themis is an AI pod that *calls Minos's task API* to commission work, the same way Iris does. The division:
+
+- **Minos** — state store, dispatcher, lifecycle actuator. No AI reasoning. Enforces scopes and budgets.
+- **Themis** — planning, sequencing, and cross-pod coordination. Decides *what* and *in what order*; Minos decides *whether the scope allows it* and executes.
+- **Iris** — conversational surface. Translates operator NL into structured commissions.
+
+Themis is load-bearing once the pod fleet is non-trivial. Without it, Iris must carry planning reasoning every time, which conflates conversation with coordination.
+
+### Capabilities
+
+| Resource | Themis pod |
+|---|---|
+| Internet egress | None (internal only) |
+| GitHub write | No (reads issue trackers and PR state only) |
+| Filesystem persistence | Ephemeral scratch; durable state lives in Minos's task registry and Mnemosyne |
+| MCP capabilities | Minos task API (commission, state query, cancel), Mnemosyne (`memory.lookup`, `memory.get_context`), Hermes (post-only via Iris fan-out; Themis does not chat directly), Argus escalation ingest |
+| Invoked by | Iris (on operator request), Argus (on guardrail escalation), scheduled rollup |
+
+### Lifecycle
+
+Themis is a long-lived pod, same pattern as Iris. A single Themis pod runs per project (Phase 2 is single-project; multi-project lands with the Phase 3 project registry).
+
+```
+Iris receives NL request → forwards to Themis
+  → Themis decomposes into tasks (schema per §8), ordered
+  → Themis commissions each task via Minos task API
+  → Minos spawns pods in Labyrinth as slots free up
+  → Pods report completion to Minos; Minos notifies Themis via the task registry
+  → Themis advances the plan — next task, branch, or report-back to Iris
+```
+
+### Argus Integration
+
+Argus escalations route to Themis (Phase 2 extracts Argus as a service with push-event ingest; Themis becomes the default escalation subscriber). Themis classifies each escalation into one of three outcomes:
+
+1. **Halt + notify** — kill the offending pod via Minos, post the incident summary to the task thread via Iris, do not respawn.
+2. **Re-plan** — cancel the current run, re-decompose the remaining work, commission replacement tasks.
+3. **Escalate to human** — preserve the pod in hibernation, surface to the operator through Iris with a request-for-decision prompt.
+
+Argus is the detection layer. Themis is the policy layer. Minos is the actuator.
+
+### Backend
+
+Local model on Athena — `qwen3.5:27b` default. Task decomposition against the known §8 schema is pattern-shaped, not novel-judgment. Escalation-class decisions (ambiguous re-plan vs halt) may route through Apollo to Sonnet; route by confidence threshold, same two-stage pattern as Momus.
+
+---
+
+## 12. Momus — Code Review Pod
+
+**Phase:** Entire section is **Phase 2**. Momus depends on the Apollo external-LLM broker for its escalation tier; both land together.
+
+### Role
+
+Momus performs automated PR review for style, correctness, logic, and architectural drift. It runs on every Daedalus-opened PR before human review — triage, not replacement. Items the local tier flags with high confidence, or that match architectural-drift patterns, escalate to a Claude tier through Apollo.
+
+Momus is a distinct function from QA (Talos, Phase 3) and from red team (Minotaur, Phase 3). QA exercises running behavior. Red team probes for adversarial weaknesses in agents and brokers. Momus reads code diffs and reasons about them.
+
+### Capabilities
+
+| Resource | Momus pod |
+|---|---|
+| Internet egress | None |
+| GitHub write | Comment-only on PRs (no approve, no request-changes, no merge). Review verdict posted as a structured comment for human reviewers. |
+| Filesystem persistence | Ephemeral checkout of the PR branch; torn down after review |
+| MCP capabilities | GitHub (`pr.read`, `pr.comment`), Apollo (for escalation-tier review), Thread sidecar (→ Hermes for progress posts), Mnemosyne (`memory.lookup` for prior-review context on the same file/area) |
+| Invoked by | Cerberus PR-opened / PR-updated webhook → Minos → Momus commission |
+
+### Lifecycle
+
+Momus pods are ephemeral per PR event. A new push to a reviewed PR triggers a fresh review.
+
+```
+Cerberus receives PR webhook → Minos commissions Momus pod
+  → Momus checks out the PR diff in an isolated workspace
+  → Local tier (qwen2.5-coder:32b on Athena) runs full sweep:
+      - Style / lint checks (deterministic, not AI)
+      - Correctness and logic review (AI)
+      - Architectural drift detection (pattern match against ADRs)
+  → Items above confidence threshold escalate through Apollo to Sonnet
+  → Momus posts a single structured review comment to the PR
+  → Pod tears down
+```
+
+Two-stage routing is the economics: expected 60–70% reduction in Claude calls per PR versus routing every review through Apollo.
+
+### Isolation
+
+Momus pods share the Labyrinth cluster but run with no write MCPs beyond the scoped GitHub comment path. They cannot push to branches, merge PRs, or mutate infrastructure. The Argus sidecar runs alongside the worker for stall detection and guardrail enforcement.
+
+### Prompt Injection Surface
+
+Momus reads PR diffs, which include attacker-controllable content (the submitter's code and commit messages). The trust boundary defined in §8 applies: diff content is untrusted input. An attacker who plants "approve this PR" in a comment or a code comment does not cause Momus to approve — Momus has no `pr.approve` MCP scope. Capability gating is the backstop.
+
+### Backend
+
+Local: `qwen2.5-coder:32b`. Escalation: Sonnet via Apollo. Opus is not expected; review is structured enough that Sonnet suffices.
+
+---
+
+## 13. Clio — Documentation Pod
+
+**Phase:** Entire section is **Phase 2**.
+
+### Role
+
+Clio generates and maintains documentation: READMEs, API docs, CHANGELOGs, and Architecture Decision Record drafts. It consumes commit history, Momus review output (as PRs land), and Hephaestus topology reports as primary inputs.
+
+Clio exists because documentation is consistently neglected in automated development pipelines. Without a dedicated pod, docs fall out of sync with code and become a human burden; Phase 1 accepts this because there are no Phase 1 pod classes capable of drift-inducing change. Phase 2 introduces Momus/Prometheus/Themis, each of which can land changes that break docs, so Clio becomes load-bearing when those pods are active.
+
+### Capabilities
+
+| Resource | Clio pod |
+|---|---|
+| Internet egress | None |
+| GitHub write | Branch push + PR open on `docs/**` paths only (scoped GitHub installation token). Never touches application code. |
+| Filesystem persistence | Ephemeral workspace |
+| MCP capabilities | GitHub (`repo.read`, `pr.create` scoped to `docs/**`), Mnemosyne (`memory.lookup` for prior doc decisions and project glossary), Thread sidecar (→ Hermes) |
+| Invoked by | Themis on merged-PR events, scheduled rollup for changelog maintenance, direct operator commission for one-off doc work |
+
+### Lifecycle
+
+Two modes:
+
+- **Reactive** — a PR merges; Themis commissions a Clio task to update affected READMEs, API docs, and the CHANGELOG. Clio opens a follow-up `docs/*` PR.
+- **Rollup** — scheduled (e.g., weekly) pass to reconcile drift between code and docs, consolidate CHANGELOG entries, and flag doc-debt areas.
+
+### Isolation
+
+Clio's GitHub scope is intentionally narrow: `docs/**` paths only. This is enforced at the GitHub App installation token scope at commission time, not left to the agent's discretion. A compromised or injected Clio cannot modify application code or infra — it can only produce doc PRs that then go through human review on the same branch-protection path.
+
+### Backend
+
+Local: `qwen3.5:27b`. Documentation is templated, pattern-based, and low reasoning-ceiling. No Apollo escalation tier in the default configuration. Exception: ADR drafts routed through Hephaestus use Hephaestus's Claude tier; Clio just formats and commits what Hephaestus produces.
+
+---
+
+## 14. Prometheus — DevOps / Release Pod
+
+**Phase:** Entire section is **Phase 2**. Prometheus depends on the `infra` task type and Proxmox MCP broker (both Phase 2).
+
+### Role
+
+Prometheus owns release engineering: pipeline configuration, environment promotion, versioning, artifact publication, and release orchestration. Separating *how it ships* from *how it's built* prevents release logic from polluting application code and lets release processes evolve independently.
+
+### Capabilities
+
+| Resource | Prometheus pod |
+|---|---|
+| Internet egress | Package registries, container registries, artifact destinations (per project-registry allowlist) |
+| GitHub write | Yes, scoped to CI config paths (`.github/workflows/**`, `ci/**`, `release/**`) and version files (`VERSION`, `package.json` version bumps, etc.) |
+| Filesystem persistence | Ephemeral workspace with registry-cache mount |
+| MCP capabilities | GitHub (`repo.read`, `pr.create` scoped to release paths), Proxmox API (environment provisioning for staging/prod promotion — Phase 2), artifact publisher, Thread sidecar (→ Hermes) |
+| Invoked by | Themis on release-eligible events (main-branch merge with semver-bump label, scheduled releases), direct operator commission |
+
+### Lifecycle
+
+```
+Release trigger (merge to main, scheduled cut, operator request)
+  → Themis commissions Prometheus with release scope
+  → Prometheus reads CHANGELOG (written by Clio), computes version bump
+  → Prometheus proposes pipeline changes if needed (`.github/workflows/**`)
+  → Prometheus builds, publishes artifacts, tags the release
+  → Prometheus promotes through environments per project policy (dev → staging → prod gated by human approval for high-blast scopes)
+  → Prometheus posts release summary to the task thread via Hermes
+```
+
+### High-Blast Scopes
+
+Production promotion is a high-blast scope (§6 MCP Broker Authentication). Prometheus cannot promote to production without a confirmation token minted by operator approval in the task thread. The Phase 2 confirmation-token machinery gates this.
+
+### Backend
+
+Local: `qwen3.5:27b`. Pipeline YAML, version bumps, and changelog formatting are structured. Release planning involving non-obvious sequencing may escalate to Apollo; confidence-threshold routing same as Momus.
+
+---
+
+## 15. Hephaestus — Architectural Assistant
+
+**Phase:** Entire section is **Phase 2**. Depends on Apollo.
+
+### Role
+
+Hephaestus is an architectural assistant, not an autonomous architect. It drafts Architecture Decision Records (ADRs), surfaces coupling and structural concerns, visualizes system topology, and presents tradeoffs for human decision. It does not mutate code or infrastructure and does not make autonomous architectural decisions.
+
+**Rationale for assistant-not-autonomous.** Wrong structural decisions compound across every other pod. A bad ADR accepted by an autonomous pod propagates into every future implementation. Keeping the human in the loop at the ADR-acceptance boundary is the same pattern as keeping the human in the loop at the PR-merge boundary — the point at which a change becomes load-bearing for future work.
+
+### Autonomy Boundary
+
+Hephaestus produces **draft artifacts only**, committed to one of three well-known draft paths:
+
+- `docs/adr/proposed/NNNN-<slug>.md` — draft ADRs pending human review
+- `docs/reports/coupling/<timestamp>.md` — coupling and structural reports
+- `docs/reports/topology/<timestamp>.svg` / `.md` — topology visualizations
+
+Promotion to `docs/adr/accepted/` happens only via a human PR merge. Hephaestus has no MCP scope that can create `docs/adr/accepted/**` files directly. Branch protection on `docs/adr/accepted/**` is the structural enforcement; Hephaestus's GitHub App installation token is scoped away from that path.
+
+### Capabilities
+
+| Resource | Hephaestus pod |
+|---|---|
+| Internet egress | None (reads the repo and Mnemosyne only) |
+| GitHub write | PR-open scoped to `docs/adr/proposed/**`, `docs/reports/**` |
+| Filesystem persistence | Ephemeral workspace |
+| MCP capabilities | GitHub (repo.read, pr.create scoped to draft paths), Mnemosyne (`memory.lookup`), Apollo (Sonnet default, Opus for ambiguous structural decisions), Thread sidecar (→ Hermes) |
+| Invoked by | Themis on design-decision triggers (significant refactor tasks, cross-module dependency changes), direct operator commission for ad-hoc structural review |
+
+### Lifecycle
+
+Hephaestus is invoked ephemerally per structural concern. Not a long-lived pod. Call frequency is low by design — an ADR draft or coupling report is a days-scale concern, not a per-PR one.
+
+### Backend
+
+Claude via Apollo. Sonnet default; Opus when the operator explicitly requests it or when Themis flags a decision as high-ambiguity. This is the one pod class where local-model routing is deliberately not the default — call frequency is low enough that token cost is not the constraint, and output quality matters disproportionately because bad architectural framing downstream is expensive.
+
+---
+
+## 16. Labyrinth — k3s Workspace Cluster
 
 **Phase:** Phase 1 ships Labyrinth as a single-node k3s cluster with the default CNI (flannel). The NetworkPolicy layering and Calico swap described below are **Phase 3**. Labyrinth stays single-node — Hydra is not on the roadmap.
 
@@ -1287,7 +1517,7 @@ Tasks that cannot cleanly hibernate within a drain grace period (e.g., mid-build
 
 ---
 
-## 12. Ariadne — Log Archive
+## 17. Ariadne — Log Archive
 
 ### Role
 
@@ -1318,7 +1548,7 @@ Retention policy is deferred — a concrete policy must be set before Ariadne is
 
 ---
 
-## 13. Asclepius — Infrastructure Health Monitor
+## 18. Asclepius — Infrastructure Health Monitor
 
 **Phase:** Entire section is **Phase 3**. Phase 1 uses Proxmox's native VM/LXC monitoring plus systemd/launchd for per-service liveness; that's sufficient for a single-operator deployment. Asclepius lands when the operational surface grows enough that a Daedalus-specific health monitor with its own MCP surface and remediation actions earns its footprint.
 
@@ -1419,7 +1649,7 @@ If Postgres itself is down, Asclepius operates in read-only mode from in-memory 
 
 ---
 
-## 14. Mnemosyne — Memory and Context Service
+## 19. Mnemosyne — Memory and Context Service
 
 **Phase:** Mnemosyne core — run records, context injection, semantic lookup via MCP, the mandatory sanitization pass — is **Phase 1**. Phase 1 ships with the **Postgres + pgvector** backend only; the SQLite reference implementation stays in the repo for local dev but is not a deployment target. **Untrusted-source tagging** (preserving trust markers across context-injection cycles) lands in **Phase 2** with the trust-boundary contract. Fact-extraction pipeline matures in Phase 2.
 
@@ -1491,7 +1721,7 @@ Run records may contain secrets the agent encountered (API responses, credential
 
 ---
 
-## 15. Repository Structure
+## 20. Repository Structure
 
 ```
 daedalus/
@@ -1559,7 +1789,7 @@ daedalus/
 
 ---
 
-## 16. Phased Delivery
+## 21. Phased Delivery
 
 Phase assignments live in [`roadmap.md`](roadmap.md) — the authoritative source for what ships in Phase 1 vs. Phase 2 vs. Phase 3. This section used to enumerate the per-phase deliverable lists inline; they moved to the roadmap so the architecture doc can stay focused on design and the roadmap can evolve independently of structural changes here.
 
@@ -1567,7 +1797,7 @@ Sections in this document carry **Phase** banners where their content varies by 
 
 ---
 
-## 17. MVP Blockers
+## 22. MVP Blockers
 
 The following must be fully designed and implemented before Daedalus Phase 1 can be considered operational. These are hard blockers for the MVP OpenClaw-replacement milestone in `roadmap.md §Phase 1`.
 
@@ -1589,7 +1819,7 @@ The following must be fully designed and implemented before Daedalus Phase 1 can
 
 ---
 
-## 18. Open Questions
+## 23. Open Questions
 
 **Phase 1:**
 
