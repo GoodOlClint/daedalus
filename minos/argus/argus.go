@@ -241,6 +241,22 @@ func (a *Argus) evaluate(ctx context.Context) {
 		if st.Terminated {
 			continue
 		}
+		// First check pod phase — a pod that Succeeded has opened its PR
+		// and is hibernating; one that Failed needs to be marked failed.
+		// Only fire when the k3s view is authoritative; dispatcher errors
+		// (network blip) fall through to the budget/stall rules.
+		phase, err := a.dispatcher.PodPhase(ctx, st.Namespace, st.PodName)
+		if err == nil {
+			switch phase {
+			case dispatch.PhaseSucceeded:
+				a.hibernate(ctx, st)
+				continue
+			case dispatch.PhaseFailed:
+				a.markFailed(ctx, st, "pod phase Failed")
+				continue
+			}
+		}
+
 		wall := now.Sub(st.StartedAt)
 		silence := now.Sub(st.LastHeartbeat)
 
@@ -255,6 +271,50 @@ func (a *Argus) evaluate(ctx context.Context) {
 			a.warn(ctx, st, fmt.Sprintf("%d%% of wall-clock budget used (%s/%s)", percentOf(wall, st.MaxWallClock), wall.Round(time.Second), st.MaxWallClock))
 		}
 	}
+}
+
+// hibernate transitions the task to awaiting-review, deletes the pod, and
+// drops it from active tracking. Called when the pod Succeeded — the
+// entrypoint opens the PR then exits; Argus sees Phase=Succeeded and
+// flips the task into the hibernated state. Storage-level conflict on
+// transition (e.g. webhook already finalized) is tolerated.
+func (a *Argus) hibernate(ctx context.Context, st *State) {
+	a.markTerminated(st.TaskID)
+	a.audit.Emit(audit.Event{Category: "argus", Outcome: "hibernate",
+		Fields: map[string]string{"task_id": st.TaskID.String(), "pod": st.PodName}})
+	if err := a.store.TransitionTask(ctx, st.TaskID, storage.StateAwaitingReview); err != nil && !errors.Is(err, storage.ErrConflict) {
+		a.audit.Emit(audit.Event{Category: "argus", Outcome: "transition-failed",
+			Message: err.Error(),
+			Fields:  map[string]string{"task_id": st.TaskID.String(), "target": "awaiting-review"}})
+	}
+	// Delete the pod so the Labyrinth slot frees.
+	if err := a.dispatcher.DeletePod(ctx, st.Namespace, st.PodName); err != nil && !errors.Is(err, dispatch.ErrPodNotFound) {
+		a.audit.Emit(audit.Event{Category: "argus", Outcome: "delete-failed",
+			Message: err.Error(),
+			Fields:  map[string]string{"task_id": st.TaskID.String(), "pod": st.PodName}})
+	}
+	a.UntrackTask(st.TaskID)
+}
+
+// markFailed handles the case where the pod phase is Failed — a container
+// exit with non-zero code, OOMKilled, etc. The pod still needs cleanup
+// for the k3s record, but marking the task failed first lets operators
+// see the terminal state quickly.
+func (a *Argus) markFailed(ctx context.Context, st *State, reason string) {
+	a.markTerminated(st.TaskID)
+	a.audit.Emit(audit.Event{Category: "argus", Outcome: "pod-failed",
+		Fields: map[string]string{"task_id": st.TaskID.String(), "pod": st.PodName, "reason": reason}})
+	if err := a.store.TransitionTask(ctx, st.TaskID, storage.StateFailed); err != nil && !errors.Is(err, storage.ErrConflict) {
+		a.audit.Emit(audit.Event{Category: "argus", Outcome: "transition-failed",
+			Message: err.Error(),
+			Fields:  map[string]string{"task_id": st.TaskID.String()}})
+	}
+	if err := a.dispatcher.DeletePod(ctx, st.Namespace, st.PodName); err != nil && !errors.Is(err, dispatch.ErrPodNotFound) {
+		a.audit.Emit(audit.Event{Category: "argus", Outcome: "delete-failed",
+			Message: err.Error(),
+			Fields:  map[string]string{"task_id": st.TaskID.String(), "pod": st.PodName}})
+	}
+	a.UntrackTask(st.TaskID)
 }
 
 func (a *Argus) warn(ctx context.Context, st *State, message string) {

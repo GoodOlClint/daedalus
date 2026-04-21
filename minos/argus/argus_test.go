@@ -201,6 +201,40 @@ func TestArgusHeartbeatResetsStall(t *testing.T) {
 	}
 }
 
+func TestArgusHibernatesOnPodSucceeded(t *testing.T) {
+	cfg := argus.DefaultConfig()
+	cfg.StallThreshold = 0
+	rig := newRig(t, cfg)
+	task := insertTrackedTask(t, rig, 1000*time.Second)
+
+	// Simulate the worker opening its PR and exiting cleanly.
+	rig.disp.SetPhase("daedalus", *task.PodName, dispatch.PhaseSucceeded)
+	rig.a.Evaluate(context.Background())
+
+	stored, _ := rig.store.GetTask(context.Background(), task.ID)
+	if stored.State != storage.StateAwaitingReview {
+		t.Errorf("expected awaiting-review, got %s", stored.State)
+	}
+	if len(rig.disp.Pods()) != 0 {
+		t.Errorf("expected pod deleted, still %d", len(rig.disp.Pods()))
+	}
+}
+
+func TestArgusMarksFailedOnPodFailed(t *testing.T) {
+	cfg := argus.DefaultConfig()
+	cfg.StallThreshold = 0
+	rig := newRig(t, cfg)
+	task := insertTrackedTask(t, rig, 1000*time.Second)
+
+	rig.disp.SetPhase("daedalus", *task.PodName, dispatch.PhaseFailed)
+	rig.a.Evaluate(context.Background())
+
+	stored, _ := rig.store.GetTask(context.Background(), task.ID)
+	if stored.State != storage.StateFailed {
+		t.Errorf("expected failed, got %s", stored.State)
+	}
+}
+
 func countStatusPosts(threads []fakeplugin.Thread) int {
 	n := 0
 	for _, th := range threads {

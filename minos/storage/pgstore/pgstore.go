@@ -240,7 +240,13 @@ func validTransition(from, to storage.State) bool {
 	case storage.StateQueued:
 		return to == storage.StateRunning || to == storage.StateFailed
 	case storage.StateRunning:
-		return to == storage.StateCompleted || to == storage.StateFailed
+		return to == storage.StateAwaitingReview ||
+			to == storage.StateCompleted ||
+			to == storage.StateFailed
+	case storage.StateAwaitingReview:
+		return to == storage.StateRunning ||
+			to == storage.StateCompleted ||
+			to == storage.StateFailed
 	default:
 		return false
 	}

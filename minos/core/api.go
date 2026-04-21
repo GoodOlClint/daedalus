@@ -368,6 +368,8 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 	switch event.Type {
 	case "pull_request":
 		s.handlePullRequestEvent(w, r, event.Body)
+	case "pull_request_review":
+		s.handlePullRequestReviewEvent(w, r, event.Body)
 	default:
 		s.audit.Emit(audit.Event{
 			Category: "webhook",
@@ -442,6 +444,75 @@ func (s *Server) handlePullRequestEvent(w http.ResponseWriter, r *http.Request, 
 	}
 	s.postSummary(r.Context(), task, target, ev.PullRequest.HTMLURL)
 	writeJSON(w, http.StatusOK, map[string]string{"status": string(target)})
+}
+
+// githubPullRequestReviewEvent is the subset of the pull_request_review
+// payload Slice C consumes. Only `submitted` actions with state
+// `changes_requested` trigger a respawn.
+type githubPullRequestReviewEvent struct {
+	Action      string `json:"action"`
+	Review      struct {
+		State string `json:"state"`
+	} `json:"review"`
+	PullRequest struct {
+		HTMLURL string `json:"html_url"`
+	} `json:"pull_request"`
+}
+
+// handlePullRequestReviewEvent drives hibernation → respawn on qualifying
+// review events per phase-1-plan.md §7 Slice C task 5.
+func (s *Server) handlePullRequestReviewEvent(w http.ResponseWriter, r *http.Request, body []byte) {
+	var ev githubPullRequestReviewEvent
+	if err := json.Unmarshal(body, &ev); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("parse pull_request_review: %v", err))
+		return
+	}
+	// Only `changes_requested` on a `submitted` review respawns; approvals
+	// and plain comments don't trigger a new run.
+	if ev.Action != "submitted" || ev.Review.State != "changes_requested" {
+		s.audit.Emit(audit.Event{
+			Category: "webhook",
+			Outcome:  "review-ignored",
+			Fields:   map[string]string{"action": ev.Action, "state": ev.Review.State, "pr": ev.PullRequest.HTMLURL},
+		})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	task, err := s.store.FindTaskByPRURL(r.Context(), ev.PullRequest.HTMLURL)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			s.audit.Emit(audit.Event{
+				Category: "webhook",
+				Outcome:  "review-no-task",
+				Fields:   map[string]string{"pr": ev.PullRequest.HTMLURL},
+			})
+			writeJSON(w, http.StatusOK, map[string]string{"status": "no-matching-task"})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if task.State != storage.StateAwaitingReview {
+		// Already running (e.g. concurrent review) or already terminal.
+		s.audit.Emit(audit.Event{
+			Category: "webhook",
+			Outcome:  "review-wrong-state",
+			Fields:   map[string]string{"task_id": task.ID.String(), "state": string(task.State)},
+		})
+		writeJSON(w, http.StatusOK, map[string]string{"status": string(task.State)})
+		return
+	}
+	if _, err := s.Respawn(r.Context(), task.ID); err != nil {
+		s.audit.Emit(audit.Event{
+			Category: "webhook",
+			Outcome:  "respawn-failed",
+			Message:  err.Error(),
+			Fields:   map[string]string{"task_id": task.ID.String()},
+		})
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "respawned"})
 }
 
 // postSummary posts the task-terminal message to the task thread via

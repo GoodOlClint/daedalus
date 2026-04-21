@@ -262,6 +262,49 @@ func (s *Server) dispatch(ctx context.Context, task *storage.Task) error {
 	return nil
 }
 
+// Respawn builds a fresh run for an existing task (awaiting-review →
+// running transition). Used by the webhook handler on qualifying review
+// events. Re-mints the pod bearer, refreshes the Mnemosyne context, and
+// dispatches a new pod; Argus re-tracks with the new run id.
+func (s *Server) Respawn(ctx context.Context, taskID uuid.UUID) (*storage.Task, error) {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("respawn: get task: %w", err)
+	}
+	if task.State != storage.StateAwaitingReview {
+		return nil, fmt.Errorf("respawn: task %s not in awaiting-review (state=%s)", taskID, task.State)
+	}
+	if task.Envelope == nil {
+		return nil, fmt.Errorf("respawn: task %s has no envelope", taskID)
+	}
+
+	// Fresh capabilities: new bearer + same scopes/endpoints.
+	caps, err := s.composeCapabilities(ctx, taskID, s.cfg.Project)
+	if err != nil {
+		return nil, fmt.Errorf("respawn: compose capabilities: %w", err)
+	}
+	task.Envelope.Capabilities = caps
+
+	// Fresh context: whatever prior runs have produced.
+	if s.mnemosyne != nil {
+		if mctx, err := s.mnemosyne.GetContext(ctx, task.ProjectID, string(task.TaskType)); err == nil && mctx != nil {
+			ref := mctx.Ref
+			task.Envelope.ContextRef = &ref
+		}
+	}
+
+	// Advance task back to running; dispatch records the new pod + run id.
+	if err := s.dispatch(ctx, task); err != nil {
+		return task, err
+	}
+	s.audit.Emit(audit.Event{
+		Category: "respawn",
+		Outcome:  "spawned",
+		Fields:   map[string]string{"task_id": taskID.String()},
+	})
+	return task, nil
+}
+
 // composeCapabilities builds the envelope capabilities block for a new pod,
 // minting the Phase 1 bearer token that the pod presents to every MCP
 // broker it calls.

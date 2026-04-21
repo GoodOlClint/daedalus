@@ -21,14 +21,15 @@ var ErrNotFound = errors.New("task not found")
 // machine (e.g. finishing a task already marked completed).
 var ErrConflict = errors.New("task state conflict")
 
-// State enumerates the Phase 1 task states. Slice C adds AwaitingReview.
+// State enumerates the Phase 1 task states.
 type State string
 
 const (
-	StateQueued    State = "queued"
-	StateRunning   State = "running"
-	StateCompleted State = "completed"
-	StateFailed    State = "failed"
+	StateQueued          State = "queued"
+	StateRunning         State = "running"
+	StateAwaitingReview  State = "awaiting-review"
+	StateCompleted       State = "completed"
+	StateFailed          State = "failed"
 )
 
 // Task is the persisted record of one commissioned task.
@@ -66,10 +67,14 @@ type Store interface {
 
 	// TransitionTask atomically updates a task's state plus the associated
 	// timestamps. valid transitions per the Phase 1 state machine:
-	//   queued    → running (sets StartedAt)
-	//   running   → completed (sets FinishedAt)
-	//   running   → failed (sets FinishedAt)
-	//   queued    → failed (sets FinishedAt)   // dispatch-time failures
+	//   queued          → running          (sets StartedAt)
+	//   queued          → failed           (sets FinishedAt)  // dispatch-time failures
+	//   running         → awaiting-review  (pod exited after PR open)
+	//   running         → completed        (sets FinishedAt)  // PR merged while running
+	//   running         → failed           (sets FinishedAt)
+	//   awaiting-review → running          (respawn; clears StartedAt? no — keep first-ever start)
+	//   awaiting-review → completed        (sets FinishedAt)  // PR merged during hibernation
+	//   awaiting-review → failed           (sets FinishedAt)  // PR closed unmerged during hibernation
 	// Any other transition returns ErrConflict.
 	TransitionTask(ctx context.Context, id uuid.UUID, to State) error
 
