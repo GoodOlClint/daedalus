@@ -34,20 +34,22 @@ const (
 
 // Task is the persisted record of one commissioned task.
 type Task struct {
-	ID         uuid.UUID
-	ParentID   *uuid.UUID
-	ProjectID  string
-	TaskType   envelope.TaskType
-	Backend    string
-	State      State
-	Priority   int16
-	Envelope   *envelope.Envelope
-	RunID      *uuid.UUID
-	PodName    *string
-	PRURL      *string
-	CreatedAt  time.Time
-	StartedAt  *time.Time
-	FinishedAt *time.Time
+	ID             uuid.UUID
+	ParentID       *uuid.UUID
+	ProjectID      string
+	TaskType       envelope.TaskType
+	Backend        string
+	State          State
+	Priority       int16
+	Envelope       *envelope.Envelope
+	RunID          *uuid.UUID
+	PodName        *string
+	PRURL          *string
+	CreatedAt      time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	StateChangedAt time.Time
+	RemindedAt     *time.Time
 }
 
 // Store is the contract every storage implementation must satisfy for
@@ -91,4 +93,8 @@ type Store interface {
 	// ErrNotFound. Used by the GitHub webhook handler to resolve
 	// pull_request events back to the owning task.
 	FindTaskByPRURL(ctx context.Context, prURL string) (*Task, error)
+
+	// MarkTaskReminded stamps RemindedAt on a task so the hibernation
+	// sweeper doesn't double-remind.
+	MarkTaskReminded(ctx context.Context, id uuid.UUID) error
 }

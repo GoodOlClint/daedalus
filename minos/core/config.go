@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/GoodOlClint/daedalus/pkg/envelope"
 )
@@ -27,6 +28,10 @@ type Config struct {
 	// Discord holds credentials for the Phase 1 Discord Hermes plugin.
 	// Zero-value means the plugin is not wired.
 	Discord DiscordConfig `json:"discord"`
+	// Hibernation controls the awaiting-review sweep cadence and TTLs
+	// (reminder → admin nudge, abandon → transition to failed). Defaults
+	// are applied when fields are empty in the config file.
+	Hibernation HibernationConfig `json:"hibernation"`
 }
 
 // AdminIdentity is the single hardcoded admin tuple checked at command
@@ -43,6 +48,15 @@ type DiscordConfig struct {
 	// BotTokenRef is the secret provider reference whose value is the
 	// Discord bot token.
 	BotTokenRef string `json:"bot_token_ref"`
+}
+
+// HibernationConfig controls the awaiting-review sweep cadence + TTLs.
+// Durations are strings (Go time.ParseDuration syntax, e.g. "24h"); empty
+// strings disable the corresponding behavior.
+type HibernationConfig struct {
+	ReminderAfter string `json:"reminder_after"`
+	AbandonAfter  string `json:"abandon_after"`
+	SweepInterval string `json:"sweep_interval"`
 }
 
 // ProjectConfig holds the single-project defaults that feed envelope
@@ -121,5 +135,43 @@ func validateConfig(c *Config) error {
 	if c.Project.DefaultBaseBranch == "" {
 		c.Project.DefaultBaseBranch = "main"
 	}
+	// Hibernation defaults per architecture.md §8 Review Activity and
+	// Abandonment; operators can override any field in the config file.
+	if c.Hibernation.ReminderAfter == "" {
+		c.Hibernation.ReminderAfter = "24h"
+	}
+	if c.Hibernation.AbandonAfter == "" {
+		c.Hibernation.AbandonAfter = "72h"
+	}
+	if c.Hibernation.SweepInterval == "" {
+		c.Hibernation.SweepInterval = "5m"
+	}
+	if _, _, _, err := c.Hibernation.Durations(); err != nil {
+		return fmt.Errorf("hibernation: %w", err)
+	}
 	return nil
+}
+
+// Durations parses the HibernationConfig's string fields. Empty strings
+// return zero durations (which the sweeper treats as "disabled").
+func (h HibernationConfig) Durations() (reminder, abandon, sweep time.Duration, err error) {
+	if h.ReminderAfter != "" {
+		reminder, err = time.ParseDuration(h.ReminderAfter)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("reminder_after %q: %w", h.ReminderAfter, err)
+		}
+	}
+	if h.AbandonAfter != "" {
+		abandon, err = time.ParseDuration(h.AbandonAfter)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("abandon_after %q: %w", h.AbandonAfter, err)
+		}
+	}
+	if h.SweepInterval != "" {
+		sweep, err = time.ParseDuration(h.SweepInterval)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("sweep_interval %q: %w", h.SweepInterval, err)
+		}
+	}
+	return reminder, abandon, sweep, nil
 }

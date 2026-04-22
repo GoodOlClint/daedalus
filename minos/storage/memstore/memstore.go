@@ -50,6 +50,9 @@ func (s *Store) InsertTask(_ context.Context, t *storage.Task) error {
 	if copy.State == "" {
 		copy.State = storage.StateQueued
 	}
+	if copy.StateChangedAt.IsZero() {
+		copy.StateChangedAt = copy.CreatedAt
+	}
 	s.tasks[copy.ID] = &copy
 	return nil
 }
@@ -106,6 +109,10 @@ func (s *Store) TransitionTask(_ context.Context, id uuid.UUID, to storage.State
 	}
 	t.State = to
 	now := s.now()
+	t.StateChangedAt = now
+	// Clear prior reminder mark on state change so the sweeper can re-remind
+	// if the task re-enters awaiting-review later.
+	t.RemindedAt = nil
 	switch to {
 	case storage.StateRunning:
 		t.StartedAt = &now
@@ -148,6 +155,19 @@ func (s *Store) SetTaskPR(_ context.Context, id uuid.UUID, prURL string) error {
 	}
 	url := prURL
 	t.PRURL = &url
+	return nil
+}
+
+// MarkTaskReminded implements storage.Store.
+func (s *Store) MarkTaskReminded(_ context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return fmt.Errorf("%w: %s", storage.ErrNotFound, id)
+	}
+	now := s.now()
+	t.RemindedAt = &now
 	return nil
 }
 

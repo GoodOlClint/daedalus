@@ -138,6 +138,9 @@ func (s *Server) Run(ctx context.Context) error {
 		close(listenErr)
 	}()
 
+	// Background sweeper for awaiting-review TTLs.
+	go s.runHibernationSweeper(ctx)
+
 	select {
 	case err, ok := <-listenErr:
 		if ok {

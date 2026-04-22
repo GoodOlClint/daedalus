@@ -64,6 +64,11 @@ func newTestServerWithHermes(t *testing.T) (kit testServerKit, plugin *fakeplugi
 				},
 			},
 		},
+		Hibernation: core.HibernationConfig{
+			ReminderAfter: "24h",
+			AbandonAfter:  "72h",
+			SweepInterval: "5m",
+		},
 	}
 
 	plug := fakeplugin.New("discord")
