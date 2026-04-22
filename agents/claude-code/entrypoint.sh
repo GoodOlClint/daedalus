@@ -20,7 +20,37 @@ set -euo pipefail
 : "${DAEDALUS_MINOS_URL:=}"
 
 log()  { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
-die()  { log "ERROR: $*"; flush_memory "failed" "$*"; exit 1; }
+die()  { log "ERROR: $*"; post_status "status" "error: $*" "" || true; flush_memory "failed" "$*"; exit 1; }
+
+# post_status narrates mid-run progress to Minos, which forwards to the
+# task thread via Hermes. Best-effort: failures log but never abort the
+# run. Usage: post_status <kind> <content> [language]
+#   kind: status | thinking | code | request_human_input
+post_status() {
+  local kind="${1:-status}"
+  local content="$2"
+  local language="${3:-}"
+  if [[ -z "$DAEDALUS_MINOS_URL" || -z "${MCP_AUTH_TOKEN:-}" || -z "$content" ]]; then
+    return 0
+  fi
+  local payload
+  payload=$(jq -n \
+    --arg kind "$kind" \
+    --arg content "$content" \
+    --arg language "$language" \
+    '{kind: $kind, content: $content, language: $language}')
+  local status
+  status=$(curl -sS -o /tmp/post-response -w '%{http_code}' \
+    -X POST \
+    -H "Authorization: Bearer $MCP_AUTH_TOKEN" \
+    -H "Content-Type: application/json" \
+    --data "$payload" \
+    "$DAEDALUS_MINOS_URL/tasks/$DAEDALUS_TASK_ID/post" \
+    || echo "000")
+  if [[ "$status" != "200" ]]; then
+    log "WARN: narration post returned $status"
+  fi
+}
 
 # flush_memory writes a minimal run record for Mnemosyne (Slice C consumes).
 flush_memory() {
@@ -64,6 +94,7 @@ PROJECT_ID=$(jq -r '.project_id' "$DAEDALUS_ENVELOPE")
 
 log "task $DAEDALUS_TASK_ID run $DAEDALUS_RUN_ID project=$PROJECT_ID"
 log "repo=$REPO_URL branch=$BRANCH base=$BASE_BRANCH"
+post_status "status" "Starting task: $BRIEF_SUMMARY"
 
 # Configure git
 git config --global user.email "daedalus-agent@$PROJECT_ID.daedalus.local"
@@ -76,6 +107,7 @@ AUTHED_URL=$(printf '%s' "$REPO_URL" | sed -E "s#^https://#https://x-access-toke
 mkdir -p "$WORKSPACE"
 cd "$WORKSPACE"
 log "cloning repo"
+post_status "status" "Cloning $REPO_URL ($BASE_BRANCH)"
 git clone --branch "$BASE_BRANCH" --depth 50 "$AUTHED_URL" repo
 cd repo
 git checkout -B "$BRANCH"
@@ -90,6 +122,7 @@ PROMPT_FILE=$(mktemp)
 } > "$PROMPT_FILE"
 
 log "invoking claude-code"
+post_status "status" "Running claude-code"
 # Non-interactive: --print emits the final response; --permission-mode acceptEdits
 # lets claude-code apply filesystem edits without a human in the loop.
 set +e
@@ -102,18 +135,22 @@ LAST_OUTCOME="claude-code-exit-$CC_STATUS"
 # Commit any changes
 if ! git diff --quiet || ! git diff --cached --quiet; then
   log "committing changes"
+  post_status "status" "Committing changes"
   git add -A
   git commit -m "daedalus: $BRIEF_SUMMARY"
 else
   log "claude-code produced no changes"
+  post_status "status" "claude-code produced no changes"
 fi
 
 # Push the feature branch
 log "pushing branch $BRANCH"
+post_status "status" "Pushing branch $BRANCH"
 git push -u origin "$BRANCH"
 
 # Open PR
 log "opening pull request"
+post_status "status" "Opening pull request"
 PR_URL=$(gh pr create \
   --base "$BASE_BRANCH" \
   --head "$BRANCH" \

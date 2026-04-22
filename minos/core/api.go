@@ -30,6 +30,7 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /tasks/{id}/pr", s.requirePodAuth(http.HandlerFunc(s.handleReportPR)))
 	mux.Handle("POST /tasks/{id}/heartbeat", s.requirePodAuth(http.HandlerFunc(s.handleHeartbeat)))
 	mux.Handle("POST /tasks/{id}/memory", s.requirePodAuth(http.HandlerFunc(s.handleReportMemory)))
+	mux.Handle("POST /tasks/{id}/post", s.requirePodAuth(http.HandlerFunc(s.handleReportPost)))
 	mux.HandleFunc("POST /webhooks/github", s.handleGithubWebhook)
 	return s.auditMiddleware(mux)
 }
@@ -235,6 +236,88 @@ type reportMemoryRequest struct {
 	Outcome string          `json:"outcome"`
 	Summary string          `json:"summary"`
 	Body    json.RawMessage `json:"body"`
+}
+
+// reportPostRequest is the body shape pods POST to /tasks/{id}/post for
+// mid-run narration per architecture.md §8 Pod Sidecars. This is the
+// Phase 1 pod → Minos → Hermes path; Phase 2 moves the pod-side
+// translator into a proper MCP sidecar container.
+type reportPostRequest struct {
+	Kind     string `json:"kind"`
+	Content  string `json:"content"`
+	Language string `json:"language,omitempty"`
+}
+
+// handleReportPost forwards a pod's narration to the task's thread via
+// Hermes. Unknown kinds default to status. Hermes failures are audited
+// but returned to the pod so client-side retry (or the entrypoint's own
+// warn-and-continue) can decide what to do.
+func (s *Server) handleReportPost(w http.ResponseWriter, r *http.Request) {
+	if s.hermes == nil {
+		writeError(w, http.StatusServiceUnavailable, "hermes not configured")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid task id")
+		return
+	}
+	var body reportPostRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode body: %v", err))
+		return
+	}
+	if body.Content == "" {
+		writeError(w, http.StatusBadRequest, "content required")
+		return
+	}
+	task, err := s.store.GetTask(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "task not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if task.Envelope == nil || task.Envelope.Communication.ThreadRef == "" {
+		writeError(w, http.StatusFailedDependency, "task has no thread")
+		return
+	}
+	kind := narrationKind(body.Kind)
+	msg := hermescore.Message{
+		Kind:     kind,
+		Content:  body.Content,
+		Language: body.Language,
+	}
+	if err := s.hermes.PostToThread(r.Context(), task.Envelope.Communication.ThreadSurface, task.Envelope.Communication.ThreadRef, msg); err != nil {
+		s.audit.Emit(audit.Event{
+			Category: "narration",
+			Outcome:  "post-failed",
+			Message:  err.Error(),
+			Fields:   map[string]string{"task_id": id.String(), "kind": string(kind)},
+		})
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.audit.Emit(audit.Event{
+		Category: "narration",
+		Outcome:  "posted",
+		Fields:   map[string]string{"task_id": id.String(), "kind": string(kind)},
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// narrationKind maps a pod-supplied string to a hermescore MessageKind.
+// Unknown inputs degrade to status so a pod with a buggy client can't
+// accidentally block narration; the audit log records the original kind.
+func narrationKind(raw string) hermescore.MessageKind {
+	switch hermescore.MessageKind(raw) {
+	case hermescore.KindStatus, hermescore.KindThinking, hermescore.KindCode, hermescore.KindHuman:
+		return hermescore.MessageKind(raw)
+	default:
+		return hermescore.KindStatus
+	}
 }
 
 // handleReportMemory persists the pod's run record via Mnemosyne.
