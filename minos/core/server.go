@@ -118,6 +118,17 @@ func New(cfg Config, p provider.Provider, store storage.Store, d dispatch.Dispat
 // Run blocks until ctx is cancelled or the HTTP listener returns a fatal
 // error. The HTTP listener serves the routes declared in api.go.
 func (s *Server) Run(ctx context.Context) error {
+	// Reconcile running tasks against live pod phases before we serve.
+	// Errors audit but don't block startup — a reconcile failure is less
+	// bad than refusing to serve at all.
+	if err := s.Reconcile(ctx); err != nil {
+		s.audit.Emit(audit.Event{
+			Category: "lifecycle",
+			Outcome:  "reconcile-failed",
+			Message:  err.Error(),
+		})
+	}
+
 	srv := &http.Server{
 		Addr:              s.cfg.ListenAddr,
 		Handler:           s.routes(),
