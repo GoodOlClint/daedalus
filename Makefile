@@ -1,7 +1,7 @@
 .PHONY: help all build test vet lint fmt tidy clean \
         dev-postgres dev-postgres-stop dev-k3d dev-k3d-stop \
         plugin-claude-code plugin-shellcheck sidecar-argus \
-        tf-fmt tf-validate tf-plan tf-apply tf-inventory
+        tf-fmt tf-validate tf-plan tf-apply tf-destroy tf-inventory
 
 GO := go
 LINTER := golangci-lint
@@ -87,6 +87,9 @@ tf-plan: ## terraform plan (requires TF_VAR_proxmox_api_token etc. in env)
 
 tf-apply: ## terraform apply (requires credentials as above)
 	cd terraform && terraform apply
+
+tf-destroy: ## terraform destroy — tears down every Daedalus guest + SDN on Crete
+	cd terraform && terraform destroy
 
 tf-inventory: ## Dump the Terraform-generated inventory yaml to ./inventory.yaml
 	cd terraform && terraform output -raw ansible_inventory_yaml > ../inventory.yaml
