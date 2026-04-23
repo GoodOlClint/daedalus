@@ -72,7 +72,7 @@ resource "null_resource" "freebsd_image" {
 }
 
 locals {
-  freebsd_file_name = "freebsd-14.2-cloudinit.qcow2"
+  freebsd_file_name = "freebsd-15.0-cloudinit-ufs.qcow2"
   freebsd_file_id   = "${var.image_datastore}:iso/${local.freebsd_file_name}"
   ssh_host          = var.proxmox_ssh_host != "" ? var.proxmox_ssh_host : var.proxmox_node
 }

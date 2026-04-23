@@ -23,8 +23,8 @@ variable "image_datastore" {
 
 variable "freebsd_image_url" {
   type        = string
-  description = "FreeBSD 14 BASIC-CLOUDINIT image URL (.qcow2.xz). A local-exec SSHes to the Proxmox node and runs curl | unxz to land the decompressed qcow2 in the iso datastore."
-  default     = "https://download.freebsd.org/releases/CloudImages/amd64/Latest/FreeBSD-14.2-RELEASE-amd64-BASIC-CLOUDINIT.qcow2.xz"
+  description = "FreeBSD 15 BASIC-CLOUDINIT qcow2.xz. A local-exec SSHes to the Proxmox node and runs curl | unxz to land the decompressed qcow2 in the iso datastore."
+  default     = "https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest/FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
 }
 
 variable "download_freebsd_image" {
