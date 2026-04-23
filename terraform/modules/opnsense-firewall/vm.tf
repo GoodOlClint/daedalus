@@ -58,7 +58,7 @@ resource "null_resource" "freebsd_image" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      ssh -o StrictHostKeyChecking=accept-new ${var.proxmox_ssh_user}@${var.proxmox_node} '
+      ssh -o StrictHostKeyChecking=accept-new ${var.proxmox_ssh_user}@${local.ssh_host} '
         set -euo pipefail
         dest="/var/lib/vz/template/iso/${local.freebsd_file_name}"
         if [ -s "$dest" ]; then exit 0; fi
@@ -74,6 +74,7 @@ resource "null_resource" "freebsd_image" {
 locals {
   freebsd_file_name = "freebsd-14.2-cloudinit.qcow2"
   freebsd_file_id   = "${var.image_datastore}:iso/${local.freebsd_file_name}"
+  ssh_host          = var.proxmox_ssh_host != "" ? var.proxmox_ssh_host : var.proxmox_node
 }
 
 resource "proxmox_virtual_environment_file" "user_data" {

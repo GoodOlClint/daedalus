@@ -7,6 +7,12 @@ variable "proxmox_ssh_user" {
   default     = "root"
 }
 
+variable "proxmox_ssh_host" {
+  type        = string
+  description = "SSH hostname or IP for the Proxmox node (used by the FreeBSD image download local-exec). Defaults to proxmox_node — override when the node name doesn't resolve from the operator's workstation."
+  default     = ""
+}
+
 variable "image_datastore" {
   type        = string
   description = "Storage pool for the FreeBSD cloud image download + cloud-init snippets"

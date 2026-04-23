@@ -24,6 +24,12 @@ variable "proxmox_ssh_user" {
   default     = "root"
 }
 
+variable "proxmox_ssh_host" {
+  type        = string
+  description = "SSH target for the Proxmox node. Empty = parse hostname out of proxmox_endpoint. Set explicitly if the endpoint uses an IP but your ~/.ssh/config prefers a name (or vice versa)."
+  default     = ""
+}
+
 # Node / storage targets.
 
 variable "proxmox_node" {

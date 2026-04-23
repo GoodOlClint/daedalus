@@ -18,6 +18,12 @@ proxmox_node      = "crete"
 primary_datastore = "local-zfs"
 image_datastore   = "local"
 
+# SSH target for the Proxmox node — used by the firewall module to
+# curl+unxz the FreeBSD cloud image into the iso datastore (bpg/proxmox
+# can't decompress xz). Set to an IP if `crete` doesn't resolve from
+# your workstation; leave empty to fall back to proxmox_node.
+proxmox_ssh_host = "172.16.30.103"
+
 # --- Network ---
 # A VLAN-aware Proxmox bridge with NO physical uplink hosts the Daedalus
 # SDN zone. Create it once on Crete:
