@@ -18,6 +18,30 @@ proxmox_node      = "crete"
 primary_datastore = "local-zfs"
 image_datastore   = "local"
 
+# --- Proxmox prerequisites on Crete (one-time) ---
+#
+# 1. `local` datastore must have `snippets` + `vztmpl` + `iso` in its
+#    content types (Datacenter > Storage > local > Edit > Content).
+#
+# 2. Token role needs SDN.Allocate, VM.GuestAgent.Audit etc. Update the
+#    `Terraform` custom role (or whichever role your terraform token has):
+#
+#      pveum role modify Terraform --privs "Datastore.Allocate,\
+#      Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,\
+#      Pool.Allocate,SDN.Allocate,SDN.Audit,SDN.Use,Sys.Audit,Sys.Console,\
+#      Sys.Modify,User.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,\
+#      VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,\
+#      VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,\
+#      VM.GuestAgent.Audit,VM.Migrate,VM.PowerMgmt"
+#
+# 3. Download the Debian 12 LXC template (the Postgres container needs it):
+#
+#      pveam update
+#      pveam download local debian-12-standard_12.7-1_amd64.tar.zst
+#
+#    If that version is gone, `pveam available | grep debian-12` shows
+#    the current one — update debian_lxc_template below to match.
+
 # SSH target for the Proxmox node — used by the firewall module to
 # curl+unxz the FreeBSD cloud image into the iso datastore (bpg/proxmox
 # can't decompress xz). Set to an IP if `crete` doesn't resolve from
