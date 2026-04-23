@@ -3,40 +3,16 @@ data "local_file" "ssh_public_key" {
 }
 
 locals {
-  management_ips = {
-    for name, cfg in var.lxc_configurations :
-    name => cidrhost(var.vlans[var.management_vlan].subnet, cfg.vm_id)
-  }
-  services_ips = {
-    for name, cfg in var.lxc_configurations :
-    name => cidrhost(var.vlans[var.services_vlan].subnet, cfg.services_ip_offset)
-  }
-  prefix_for_vlan = {
-    for k, v in var.vlans :
-    k => tonumber(split("/", v.subnet)[1])
-  }
-  gateway_for_vlan = {
-    for k, v in var.vlans :
-    k => cidrhost(v.subnet, 1)
-  }
+  subnet_prefix = tonumber(split("/", var.subnet)[1])
+  gateway       = cidrhost(var.subnet, 1)
 
-  # Per-LXC ordered interface list — same ordering drives both
-  # network_interface blocks and initialization.ip_config blocks below.
-  lxc_interfaces = {
-    for name, cfg in var.lxc_configurations : name => [
-      for vlan_key in cfg.vlans : {
-        vlan_key = vlan_key
-        vlan_id  = var.vlans[vlan_key].vlan_id
-        bridge   = var.vlans[vlan_key].bridge
-        ip_cidr = format(
-          "%s/%d",
-          vlan_key == var.management_vlan ? local.management_ips[name] : local.services_ips[name],
-          local.prefix_for_vlan[vlan_key],
-        )
-        gateway    = local.gateway_for_vlan[vlan_key]
-        is_primary = vlan_key == var.management_vlan
-      }
-    ]
+  lxc_ip = {
+    for name, cfg in var.lxc_configurations :
+    name => cidrhost(var.subnet, cfg.ip_offset)
+  }
+  lxc_ip_cidr = {
+    for name, cfg in var.lxc_configurations :
+    name => format("%s/%d", cidrhost(var.subnet, cfg.ip_offset), local.subnet_prefix)
   }
 }
 
@@ -80,28 +56,18 @@ resource "proxmox_virtual_environment_container" "daedalus" {
       keys = [trimspace(data.local_file.ssh_public_key.content)]
     }
 
-    # IP configs: one block per interface, in the same order as the
-    # network_interface blocks below. Only the primary (management VLAN)
-    # carries gateway4 so secondary interfaces do not fight over the
-    # default route.
-    dynamic "ip_config" {
-      for_each = local.lxc_interfaces[each.key]
-      content {
-        ipv4 {
-          address = ip_config.value.ip_cidr
-          gateway = ip_config.value.is_primary ? ip_config.value.gateway : null
-        }
+    # Single interface: static IP on the Daedalus VNet, gateway = OPNsense LAN.
+    ip_config {
+      ipv4 {
+        address = local.lxc_ip_cidr[each.key]
+        gateway = local.gateway
       }
     }
   }
 
-  dynamic "network_interface" {
-    for_each = local.lxc_interfaces[each.key]
-    content {
-      name    = "eth${network_interface.key}"
-      bridge  = network_interface.value.bridge
-      vlan_id = can(regex("^vmbr", network_interface.value.bridge)) ? network_interface.value.vlan_id : null
-    }
+  network_interface {
+    name   = "eth0"
+    bridge = var.bridge
   }
 
   startup {

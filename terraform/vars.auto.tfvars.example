@@ -1,32 +1,66 @@
-# Copy to vars.auto.tfvars (gitignored) and edit. Credentials are NEVER put
-# here — load them from TF_VAR_* environment variables in your shell:
+# Copy to vars.auto.tfvars (gitignored) and edit. Credentials are NEVER
+# put here — load them from TF_VAR_* environment variables in your shell:
 #
-#   export TF_VAR_proxmox_endpoint="https://crete.lan:8006/"
+#   export TF_VAR_proxmox_endpoint="https://172.16.30.103:8006/"
 #   export TF_VAR_proxmox_api_token='terraform@pve!daedalus=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+#
+# Generate an OPNsense API key pair once and stash in your password
+# manager or Infisical:
+#
+#   export TF_VAR_opnsense_api_key="$(openssl rand -base64 48 | tr -d '=+/' | head -c 40)"
+#   export TF_VAR_opnsense_api_secret="$(openssl rand -base64 48 | tr -d '=+/' | head -c 40)"
+#
+# Terraform seeds both plaintext values into OPNsense's config.xml at
+# bootstrap (the secret is sha512-crypt hashed locally via openssl passwd
+# -6), so the firewall comes up with working API auth on first boot.
 
-proxmox_node    = "crete"
+proxmox_node      = "crete"
 primary_datastore = "local-zfs"
 image_datastore   = "local"
 
+# --- Network ---
+# A VLAN-aware Proxmox bridge with NO physical uplink hosts the Daedalus
+# SDN zone. Create it once on Crete:
+#   auto vmbr1
+#   iface vmbr1 inet manual
+#       bridge-ports none
+#       bridge-stp off
+#       bridge-fd 0
+#       bridge-vlan-aware yes
+#       bridge-vids 2-4094
+#
+# `ifreload -a` to apply without a reboot.
+wan_bridge      = "vmbr0"
+internal_bridge = "vmbr1"
+
+sdn_zone         = "daedalus"
+sdn_vnet         = "daedavnet"
+daedalus_vlan_id = 200
+daedalus_subnet  = "10.100.0.0/24"
+
+dns_servers = ["1.1.1.1", "9.9.9.9"]
+
+# --- Cloud-init defaults ---
 ssh_public_key_path = "~/.ssh/id_ed25519.pub"
 admin_username      = "daedalus"
 timezone            = "America/Chicago"
 domain_suffix       = "daedalus.local"
 
-management_vlan = "mgmt"
-services_vlan   = "services"
+# --- OPNsense firewall ---
+# First apply:
+#   * Downloads the FreeBSD cloud image
+#   * Creates the OPNsense VM with cloud-init user-data that runs
+#     opnsense-bootstrap.sh non-interactively
+#   * Seeds config.xml with WAN dhcp + LAN 10.100.0.1/24 + root SSH key
+#     + the API key pair (hashed)
+# After the VM reboots into OPNsense:
+#   * Operator can SSH to the LAN address via Crete as a jump host:
+#       ssh -J root@crete root@10.100.0.1
+#   * Optionally set opnsense_operator_ingress_cidr to your workstation's
+#     public CIDR so you can reach OPNsense's web UI over WAN.
+#   * Terraform-managed firewall rules land in a follow-up commit once
+#     the browningluke/opnsense provider schema is validated against
+#     a live OPNsense.
 
-vlans = {
-  mgmt = {
-    vlan_id = 10
-    bridge  = "vmbr0"
-    subnet  = "10.10.0.0/24"
-  }
-  services = {
-    vlan_id = 40
-    bridge  = "vmbr0"
-    subnet  = "10.40.0.0/24"
-  }
-}
-
-dns_servers = ["1.1.1.1", "9.9.9.9"]
+opnsense_release               = "24.7"
+opnsense_operator_ingress_cidr = "" # e.g. "172.16.30.0/24"

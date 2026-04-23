@@ -1,19 +1,15 @@
 version: 2
 ethernets:
-%{ for iface in interfaces ~}
-  eth_${iface.vlan_key}:
+  eth0:
     match:
-      macaddress: '${iface.mac}'
-    set-name: eth_${iface.vlan_key}
+      macaddress: '${macaddress}'
+    set-name: eth0
     dhcp4: false
     addresses:
-      - ${iface.ip}/${iface.prefix}
-%{ if iface.is_primary ~}
-    gateway4: ${iface.gateway}
+      - ${address}/${prefix}
+    gateway4: ${gateway}
     nameservers:
       addresses:
 %{ for dns in dns_servers ~}
         - ${dns}
-%{ endfor ~}
-%{ endif ~}
 %{ endfor ~}

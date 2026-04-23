@@ -44,46 +44,53 @@ variable "image_datastore" {
   default     = "local"
 }
 
-# VLAN topology. Daedalus does NOT manage SDN — the VLANs below must already
-# exist on the Proxmox node, either via homelab/ Terraform or manual config.
-# Example (fill into vars.auto.tfvars):
-#   vlans = {
-#     mgmt = {
-#       vlan_id = 10
-#       bridge  = "vmbr0"
-#       subnet  = "10.10.0.0/24"
-#     }
-#     services = {
-#       vlan_id = 40
-#       bridge  = "vmbr0"
-#       subnet  = "10.40.0.0/24"
-#     }
-#   }
+# Daedalus network — single internal VLAN on Crete, no physical uplink.
+# Proxmox SDN creates the VNet; guests attach to that VNet directly.
+# Egress flows through the OPNsense firewall VM (see modules/opnsense-firewall).
 
-variable "vlans" {
-  description = "VLANs the Daedalus guests attach to"
-  type = map(object({
-    vlan_id = number
-    bridge  = string
-    subnet  = string
-  }))
+variable "wan_bridge" {
+  type        = string
+  description = "Existing Proxmox bridge with a physical uplink; OPNsense WAN attaches here for DHCP from the wider network"
+  default     = "vmbr0"
 }
 
-variable "management_vlan" {
+variable "internal_bridge" {
   type        = string
-  description = "Key in `vlans` that carries SSH/default route"
-  default     = "mgmt"
+  description = "VLAN-aware Proxmox bridge with NO physical uplink that hosts the Daedalus SDN zone. Create manually: `auto vmbr1` + `iface vmbr1 inet manual` + `bridge-vlan-aware yes` + `bridge-vids 2-4094`"
+  default     = "vmbr1"
 }
 
-variable "services_vlan" {
+variable "sdn_zone" {
   type        = string
-  description = "Key in `vlans` for intra-Daedalus service traffic"
-  default     = "services"
+  description = "Proxmox SDN VLAN zone name for Daedalus"
+  default     = "daedalus"
+}
+
+variable "sdn_vnet" {
+  type        = string
+  description = "Proxmox SDN VNet name — also the bridge name guests attach to"
+  default     = "daedavnet"
+}
+
+variable "daedalus_vlan_id" {
+  type        = number
+  description = "VLAN tag for the Daedalus VNet (200+ recommended to avoid homelab overlap)"
+  default     = 200
+  validation {
+    condition     = var.daedalus_vlan_id >= 2 && var.daedalus_vlan_id <= 4094
+    error_message = "VLAN id must be between 2 and 4094."
+  }
+}
+
+variable "daedalus_subnet" {
+  type        = string
+  description = "CIDR for the Daedalus VNet; OPNsense LAN gets .1"
+  default     = "10.100.0.0/24"
 }
 
 variable "dns_servers" {
   type        = list(string)
-  description = "DNS servers for cloud-init network config"
+  description = "Upstream DNS servers OPNsense forwards to and guests use"
   default     = ["1.1.1.1", "9.9.9.9"]
 }
 
@@ -147,3 +154,46 @@ variable "debian_lxc_template_datastore" {
   description = "Storage pool that holds the LXC template tarball"
   default     = "local"
 }
+
+# OPNsense firewall — ISO + sizing. API credentials (only used once
+# rules are enabled via opnsense_configure_rules) live with the provider.
+
+variable "opnsense_vm_id" {
+  type    = number
+  default = 200
+}
+
+variable "opnsense_release" {
+  type        = string
+  description = "OPNsense release opnsense-bootstrap installs"
+  default     = "24.7"
+}
+
+variable "opnsense_freebsd_image_url" {
+  type        = string
+  description = "FreeBSD 14 cloud-init image URL (uncompressed qcow2 — bpg/proxmox doesn't decompress xz)."
+  default     = "https://download.freebsd.org/releases/CloudImages/amd64/Latest/FreeBSD-14.2-RELEASE-amd64-BASIC-CLOUDINIT.qcow2"
+}
+
+variable "opnsense_operator_ingress_cidr" {
+  type        = string
+  description = "Source CIDR allowed to SSH/HTTPS into OPNsense on WAN. Empty = WAN inbound fully blocked (operator uses Crete as a jump host)."
+  default     = ""
+}
+
+variable "opnsense_api_key" {
+  type        = string
+  description = "Plaintext OPNsense API key id. Seeded into config.xml at bootstrap."
+  sensitive   = true
+}
+
+variable "opnsense_api_secret" {
+  type        = string
+  description = "Plaintext OPNsense API key secret. Hashed with openssl passwd -6 before landing in config.xml."
+  sensitive   = true
+}
+
+# Terraform-managed firewall rules via browningluke/opnsense provider
+# land in a follow-up commit. Bootstrap already seeds the API key pair
+# into OPNsense's config.xml so the provider can authenticate the moment
+# it's wired in.

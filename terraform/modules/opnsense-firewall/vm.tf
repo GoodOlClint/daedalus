@@ -1,0 +1,164 @@
+# OPNsense firewall — provisioned from scratch by opnsense-bootstrap on
+# a FreeBSD 14 cloud-init VM. First boot:
+#   1. FreeBSD boots
+#   2. cloud-init seeds /conf/config.xml (WAN dhcp, LAN 10.100.0.1/24,
+#      root SSH key, API key pre-hashed), authorized_keys, and /root/firstrun.sh
+#   3. cloud-init runs /root/firstrun.sh which invokes
+#      `opnsense-bootstrap.sh -r <release> -f -y` (the -f flag preserves
+#      our seeded config.xml during the conversion)
+#   4. Bootstrap reboots into OPNsense; the API key we seeded is already
+#      active and the LAN interface is up at 10.100.0.1.
+
+locals {
+  lan_prefix = tonumber(split("/", var.lan_cidr)[1])
+  lan_host   = cidrhost(var.lan_cidr, 1)
+
+  # MAC addresses keyed off vm_id so rebuilds don't drift DHCP leases.
+  wan_mac = format("52:54:00:%02x:%02x:01", (var.vm_id / 256) % 256, var.vm_id % 256)
+  lan_mac = format("52:54:00:%02x:%02x:02", (var.vm_id / 256) % 256, var.vm_id % 256)
+}
+
+data "local_file" "ssh_public_key" {
+  filename = pathexpand(var.ssh_public_key_path)
+}
+
+# Hash the API secret with sha512-crypt ($6$), which is the format
+# OPNsense stores in config.xml. Uses the local openssl binary.
+data "external" "api_secret_hash" {
+  program = [
+    "bash", "-c", <<-BASH
+      set -euo pipefail
+      salt="$(head -c 12 /dev/urandom | base64 | tr -d '=+/')"
+      hash="$(openssl passwd -6 -salt "$salt" "$SECRET")"
+      printf '{"hash":"%s"}\n' "$hash"
+    BASH
+  ]
+  query = {
+    # Passed via env so it doesn't show up in `ps`.
+    SECRET = var.api_key_secret
+  }
+}
+
+resource "proxmox_virtual_environment_download_file" "freebsd_image" {
+  count = var.download_freebsd_image ? 1 : 0
+
+  content_type        = "iso"
+  datastore_id        = var.image_datastore
+  node_name           = var.proxmox_node
+  url                 = var.freebsd_image_url
+  file_name           = "freebsd-14.2-cloudinit.qcow2"
+  overwrite           = true
+  overwrite_unmanaged = true
+  verify              = true
+  upload_timeout      = 1200
+  # bpg/proxmox's download_file supports gz + zst decompression but not
+  # xz. Default image URL points at the uncompressed .qcow2; if the
+  # operator prefers the xz-compressed variant they decompress locally
+  # and set download_freebsd_image = false.
+}
+
+locals {
+  freebsd_file_id = var.download_freebsd_image ? proxmox_virtual_environment_download_file.freebsd_image[0].id : "${var.image_datastore}:iso/freebsd-14.2-cloudinit.qcow2"
+}
+
+resource "proxmox_virtual_environment_file" "user_data" {
+  content_type = "snippets"
+  datastore_id = var.image_datastore
+  node_name    = var.proxmox_node
+
+  source_raw {
+    data = templatefile("${path.module}/templates/user-data.yaml.tmpl", {
+      hostname         = var.vm_name
+      fqdn             = "${var.vm_name}.${var.domain_suffix}"
+      ssh_key          = trimspace(data.local_file.ssh_public_key.content)
+      opnsense_release = var.opnsense_release
+      config_xml = templatefile("${path.module}/templates/config.xml.tmpl", {
+        hostname              = var.vm_name
+        domain                = var.domain_suffix
+        ssh_key               = trimspace(data.local_file.ssh_public_key.content)
+        api_key_id            = var.api_key_id
+        api_key_secret_hash   = data.external.api_secret_hash.result.hash
+        lan_ip                = local.lan_host
+        lan_prefix            = local.lan_prefix
+        operator_ingress_cidr = var.operator_ingress_cidr
+        dns_servers           = var.dns_servers
+      })
+    })
+    file_name = "${var.vm_name}-user-data.yaml"
+  }
+}
+
+resource "proxmox_virtual_environment_file" "network_data" {
+  content_type = "snippets"
+  datastore_id = var.image_datastore
+  node_name    = var.proxmox_node
+
+  source_raw {
+    data = templatefile("${path.module}/templates/network-data.yaml.tmpl", {
+      wan_mac     = local.wan_mac
+      lan_mac     = local.lan_mac
+      lan_ip      = local.lan_host
+      lan_prefix  = local.lan_prefix
+      dns_servers = var.dns_servers
+    })
+    file_name = "${var.vm_name}-network-data.yaml"
+  }
+}
+
+resource "proxmox_virtual_environment_vm" "opnsense" {
+  name        = var.vm_name
+  vm_id       = var.vm_id
+  node_name   = var.proxmox_node
+  description = "Daedalus egress firewall (OPNsense ${var.opnsense_release} via opnsense-bootstrap). LAN ${local.lan_host}/${local.lan_prefix}"
+  machine     = "q35"
+  tags        = ["daedalus", "firewall", "opnsense"]
+
+  agent {
+    enabled = false # No qemu-guest-agent on OPNsense.
+  }
+
+  cpu {
+    cores = var.cpu_cores
+    type  = "x86-64-v3"
+  }
+
+  memory {
+    dedicated = var.memory_mb
+  }
+
+  disk {
+    datastore_id = var.primary_datastore
+    file_id      = local.freebsd_file_id
+    interface    = "virtio0"
+    iothread     = true
+    discard      = "on"
+    size         = var.disk_size_gb
+  }
+
+  initialization {
+    datastore_id         = var.primary_datastore
+    user_data_file_id    = proxmox_virtual_environment_file.user_data.id
+    network_data_file_id = proxmox_virtual_environment_file.network_data.id
+  }
+
+  # WAN — DHCP from the wider homelab.
+  network_device {
+    bridge      = var.wan_bridge
+    mac_address = local.wan_mac
+  }
+
+  # LAN — Daedalus SDN VNet.
+  network_device {
+    bridge      = var.lan_bridge
+    mac_address = local.lan_mac
+  }
+
+  lifecycle {
+    ignore_changes = [
+      # Cloud-init only runs on first boot; template tweaks shouldn't
+      # force a recreate after OPNsense has replaced the filesystem.
+      initialization[0].user_data_file_id,
+      initialization[0].network_data_file_id,
+    ]
+  }
+}

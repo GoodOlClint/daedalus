@@ -20,46 +20,21 @@ resource "proxmox_virtual_environment_download_file" "cloud_image" {
 locals {
   cloud_image_file_id = var.create_cloud_image ? proxmox_virtual_environment_download_file.cloud_image[0].id : "${var.image_datastore}:iso/noble-server-cloudimg-amd64.img"
 
-  # Per-VM management IP (mgmt VLAN, host = vm_id).
-  management_ips = {
-    for name, cfg in var.vm_configurations :
-    name => cidrhost(var.vlans[var.management_vlan].subnet, cfg.vm_id)
-  }
+  subnet_prefix = tonumber(split("/", var.subnet)[1])
+  subnet_host   = cidrhost(var.subnet, 1) # OPNsense LAN gateway address
 
-  # Per-VM services IP (services VLAN, host = services_ip_offset).
-  services_ips = {
+  # Per-VM IP (static) + MAC (stable across regenerations).
+  vm_ip = {
     for name, cfg in var.vm_configurations :
-    name => cidrhost(var.vlans[var.services_vlan].subnet, cfg.services_ip_offset)
+    name => cidrhost(var.subnet, cfg.ip_offset)
   }
-
-  # Stable MAC byte derived from vm_id so regenerations do not flap DHCP.
-  mac_byte = {
+  vm_mac = {
     for name, cfg in var.vm_configurations :
-    name => (cfg.vm_id % 254) + 1
-  }
-
-  # Build per-VLAN interface descriptor for each VM.
-  vm_interfaces = {
-    for name, cfg in var.vm_configurations : name => [
-      for vlan_key in cfg.vlans : {
-        vlan_key = vlan_key
-        vlan_id  = var.vlans[vlan_key].vlan_id
-        bridge   = var.vlans[vlan_key].bridge
-        subnet   = var.vlans[vlan_key].subnet
-        ip = vlan_key == var.management_vlan ? local.management_ips[name] : (
-          vlan_key == var.services_vlan ? local.services_ips[name] : null
-        )
-        prefix     = tonumber(split("/", var.vlans[vlan_key].subnet)[1])
-        gateway    = cidrhost(var.vlans[vlan_key].subnet, 1)
-        is_primary = vlan_key == var.management_vlan
-        mac = format(
-          "52:54:00:%02x:%02x:%02x",
-          local.mac_byte[name],
-          floor(var.vlans[vlan_key].vlan_id / 256),
-          var.vlans[vlan_key].vlan_id % 256
-        )
-      }
-    ]
+    name => format("52:54:00:%02x:%02x:%02x",
+      (cfg.vm_id % 254) + 1,
+      (cfg.ip_offset / 256),
+      (cfg.ip_offset % 256),
+    )
   }
 }
 
@@ -72,7 +47,7 @@ resource "proxmox_virtual_environment_file" "user_data" {
 
   source_raw {
     data = templatefile("${path.module}/templates/user-data.yaml.tmpl", {
-      hostname      = each.value.vm_id == null ? each.key : each.key
+      hostname      = each.key
       fqdn          = "${each.key}.${var.domain_suffix}"
       username      = var.admin_username
       ssh_key       = trimspace(data.local_file.ssh_public_key.content)
@@ -92,7 +67,10 @@ resource "proxmox_virtual_environment_file" "network_data" {
 
   source_raw {
     data = templatefile("${path.module}/templates/network-data.yaml.tmpl", {
-      interfaces  = local.vm_interfaces[each.key]
+      address     = local.vm_ip[each.key]
+      prefix      = local.subnet_prefix
+      gateway     = local.subnet_host
+      macaddress  = local.vm_mac[each.key]
       dns_servers = var.dns_servers
     })
     file_name = "${each.key}-network-data.yaml"
@@ -137,13 +115,9 @@ resource "proxmox_virtual_environment_vm" "daedalus" {
     network_data_file_id = proxmox_virtual_environment_file.network_data[each.key].id
   }
 
-  dynamic "network_device" {
-    for_each = local.vm_interfaces[each.key]
-    content {
-      bridge      = network_device.value.bridge
-      vlan_id     = can(regex("^vmbr", network_device.value.bridge)) ? network_device.value.vlan_id : null
-      mac_address = network_device.value.mac
-    }
+  network_device {
+    bridge      = var.bridge
+    mac_address = local.vm_mac[each.key]
   }
 
   # Cloud-init files are rendered once at first boot; ignore subsequent

@@ -1,7 +1,10 @@
 # Terraform provider configuration.
-# Daedalus depends on Proxmox VLANs/bridges already existing on Crete — either
-# configured via the sibling homelab/ repo's modules/network or by hand. This
-# Terraform project only provisions the four Daedalus guests.
+# Daedalus creates its own SDN zone + VNet inside Crete — it does not
+# depend on the wider homelab's VLANs. External egress flows through a
+# Crete-local OPNsense firewall provisioned from scratch via FreeBSD +
+# opnsense-bootstrap. Terraform-managed firewall rules via the
+# browningluke/opnsense provider land in a follow-up commit after the
+# operator has validated the schema against a live OPNsense.
 
 terraform {
   required_version = ">= 1.9"
@@ -13,6 +16,10 @@ terraform {
     local = {
       source  = "hashicorp/local"
       version = "~> 2.5"
+    }
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.3"
     }
   }
 }

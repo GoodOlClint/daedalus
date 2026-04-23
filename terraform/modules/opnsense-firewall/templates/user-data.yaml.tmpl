@@ -1,0 +1,34 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${fqdn}
+preserve_hostname: false
+
+ssh_pwauth: false
+disable_root: false
+
+users:
+  - name: root
+    ssh_authorized_keys:
+      - ${ssh_key}
+
+write_files:
+  - path: /conf/config.xml
+    permissions: "0600"
+    owner: root:wheel
+    content: |
+      ${indent(6, config_xml)}
+  - path: /root/firstrun.sh
+    permissions: "0700"
+    owner: root:wheel
+    content: |
+      #!/bin/sh
+      set -eux
+      # opnsense-bootstrap replaces the FreeBSD base with OPNsense. -f
+      # tells it to preserve /conf/config.xml (already seeded above).
+      fetch -o /tmp/opnsense-bootstrap.sh \
+        https://raw.githubusercontent.com/opnsense/update/master/src/opnsense-bootstrap.sh
+      sh /tmp/opnsense-bootstrap.sh -r ${opnsense_release} -f -y
+      # opnsense-bootstrap triggers its own reboot at the end.
+
+runcmd:
+  - /root/firstrun.sh

@@ -1,0 +1,14 @@
+version: 2
+ethernets:
+  vtnet0:
+    match:
+      macaddress: '${wan_mac}'
+    set-name: vtnet0
+    dhcp4: true
+  vtnet1:
+    match:
+      macaddress: '${lan_mac}'
+    set-name: vtnet1
+    dhcp4: false
+    addresses:
+      - ${lan_ip}/${lan_prefix}
