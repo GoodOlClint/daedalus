@@ -26,6 +26,12 @@ resource "proxmox_virtual_environment_container" "daedalus" {
   unprivileged  = true
   start_on_boot = true
 
+  # Debian 12 ships systemd 252, which needs nesting to run cleanly in
+  # an unprivileged container (systemd-resolved, user slices, etc).
+  features {
+    nesting = true
+  }
+
   cpu {
     cores = each.value.cpu_cores
   }
