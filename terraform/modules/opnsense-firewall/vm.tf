@@ -14,8 +14,9 @@ locals {
   lan_host   = cidrhost(var.lan_cidr, 1)
 
   # MAC addresses keyed off vm_id so rebuilds don't drift DHCP leases.
-  wan_mac = format("52:54:00:%02x:%02x:01", (var.vm_id / 256) % 256, var.vm_id % 256)
-  lan_mac = format("52:54:00:%02x:%02x:02", (var.vm_id / 256) % 256, var.vm_id % 256)
+  # floor() forces integer — HCL's / returns a float, and %02x rejects floats.
+  wan_mac = format("52:54:00:%02x:%02x:01", floor(var.vm_id / 256) % 256, var.vm_id % 256)
+  lan_mac = format("52:54:00:%02x:%02x:02", floor(var.vm_id / 256) % 256, var.vm_id % 256)
 }
 
 data "local_file" "ssh_public_key" {

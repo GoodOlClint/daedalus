@@ -32,7 +32,7 @@ locals {
     for name, cfg in var.vm_configurations :
     name => format("52:54:00:%02x:%02x:%02x",
       (cfg.vm_id % 254) + 1,
-      (cfg.ip_offset / 256),
+      floor(cfg.ip_offset / 256),
       (cfg.ip_offset % 256),
     )
   }
