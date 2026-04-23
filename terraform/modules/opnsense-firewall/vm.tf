@@ -57,6 +57,14 @@ resource "null_resource" "freebsd_image" {
   }
 
   provisioner "local-exec" {
+    # virt-customize inserts /firstboot into the qcow2 before first
+    # boot. FreeBSD's BASIC-CLOUDINIT image finalization consumes
+    # /firstboot during build, so a deployed image never has the
+    # marker — without it, nuageinit's rc.d script (KEYWORD: firstboot)
+    # never fires, and cloud-init silently doesn't run. Injecting the
+    # marker pre-boot is the only way to guarantee nuageinit triggers
+    # on every fresh VM without requiring an operator to hand-touch it.
+    # Requires `apt install libguestfs-tools` on the Proxmox node (once).
     command = <<-EOT
       ssh -o StrictHostKeyChecking=accept-new ${var.proxmox_ssh_user}@${local.ssh_host} '
         set -euo pipefail
@@ -66,6 +74,7 @@ resource "null_resource" "freebsd_image" {
         curl -fL -o "$tmp" "${var.freebsd_image_url}"
         unxz -f "$tmp"
         mv "$${tmp%.xz}" "$dest"
+        virt-customize -a "$dest" --touch /firstboot
       '
     EOT
   }

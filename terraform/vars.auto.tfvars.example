@@ -23,7 +23,15 @@ image_datastore   = "local"
 # 1. `local` datastore must have `snippets` + `vztmpl` + `iso` in its
 #    content types (Datacenter > Storage > local > Edit > Content).
 #
-# 2. Token role needs SDN.Allocate, VM.GuestAgent.Audit etc. Update the
+# 2. libguestfs-tools (one-time) — the firewall module virt-customizes
+#    the FreeBSD image to inject /firstboot so nuageinit actually fires
+#    on first boot. FreeBSD's BASIC-CLOUDINIT image ships without the
+#    marker (consumed during image finalization), so without this step
+#    cloud-init silently doesn't run on a fresh VM.
+#
+#      apt install libguestfs-tools
+#
+# 3. Token role needs SDN.Allocate, VM.GuestAgent.Audit etc. Update the
 #    `Terraform` custom role (or whichever role your terraform token has):
 #
 #      pveum role modify Terraform --privs "Datastore.Allocate,\
@@ -50,7 +58,7 @@ image_datastore   = "local"
 # Subsequent applies (no firewall rebuild) can run `make tf-apply`
 # directly — the ordering only matters on cold start.
 
-# 3. Download the Debian 12 LXC template (the Postgres container needs it).
+# 4. Download the Debian 12 LXC template (the Postgres container needs it).
 #    Proxmox bumps point releases often — check what's currently listed:
 #
 #      pveam update
