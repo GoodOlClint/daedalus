@@ -39,7 +39,7 @@ data "external" "api_secret_hash" {
   }
 }
 
-resource "proxmox_virtual_environment_download_file" "freebsd_image" {
+resource "proxmox_download_file" "freebsd_image" {
   count = var.download_freebsd_image ? 1 : 0
 
   content_type        = "iso"
@@ -58,7 +58,7 @@ resource "proxmox_virtual_environment_download_file" "freebsd_image" {
 }
 
 locals {
-  freebsd_file_id = var.download_freebsd_image ? proxmox_virtual_environment_download_file.freebsd_image[0].id : "${var.image_datastore}:iso/freebsd-14.2-cloudinit.qcow2"
+  freebsd_file_id = var.download_freebsd_image ? proxmox_download_file.freebsd_image[0].id : "${var.image_datastore}:iso/freebsd-14.2-cloudinit.qcow2"
 }
 
 resource "proxmox_virtual_environment_file" "user_data" {

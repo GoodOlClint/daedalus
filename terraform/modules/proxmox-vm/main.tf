@@ -3,7 +3,7 @@ data "local_file" "ssh_public_key" {
 }
 
 # Download the Ubuntu cloud image once; reused on subsequent applies.
-resource "proxmox_virtual_environment_download_file" "cloud_image" {
+resource "proxmox_download_file" "cloud_image" {
   count = var.create_cloud_image ? 1 : 0
 
   content_type        = "iso"
@@ -18,7 +18,7 @@ resource "proxmox_virtual_environment_download_file" "cloud_image" {
 }
 
 locals {
-  cloud_image_file_id = var.create_cloud_image ? proxmox_virtual_environment_download_file.cloud_image[0].id : "${var.image_datastore}:iso/noble-server-cloudimg-amd64.img"
+  cloud_image_file_id = var.create_cloud_image ? proxmox_download_file.cloud_image[0].id : "${var.image_datastore}:iso/noble-server-cloudimg-amd64.img"
 
   subnet_prefix = tonumber(split("/", var.subnet)[1])
   subnet_host   = cidrhost(var.subnet, 1) # OPNsense LAN gateway address
