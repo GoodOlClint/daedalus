@@ -94,6 +94,6 @@ tf-apply-firewall: ## Phase 1 of a fresh apply — create SDN + OPNsense only, t
 tf-destroy: ## terraform destroy — tears down every Daedalus guest + SDN on Crete
 	cd terraform && terraform destroy
 
-tf-inventory: ## Dump the Terraform-generated inventory yaml to ./inventory.yaml
-	cd terraform && terraform output -raw ansible_inventory_yaml > ../inventory.yaml
+tf-inventory: ## Dump the Terraform-generated guest inventory to ./inventory.yaml
+	cd terraform && terraform output -raw guests_yaml > ../inventory.yaml
 	@echo "Wrote inventory.yaml"

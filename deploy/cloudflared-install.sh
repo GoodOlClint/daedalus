@@ -18,13 +18,25 @@
 # Env:
 #   MINOS_HOST           default 172.16.140.101
 #   SSH_USER             default daedalus
-#   CLOUDFLARED_TOKEN    required — the tunnel token from the dashboard
+#   CLOUDFLARED_TOKEN    optional — tunnel token. Defaults to the
+#                        `cloudflared/tunnel-token` entry in
+#                        deploy/secrets.json so the token lives alongside
+#                        the rest of the Daedalus credentials.
 
 set -euo pipefail
 
 : "${MINOS_HOST:=172.16.140.101}"
 : "${SSH_USER:=daedalus}"
-: "${CLOUDFLARED_TOKEN:?must be set}"
+
+# Fall back to secrets.json if env var isn't set.
+if [ -z "${CLOUDFLARED_TOKEN:-}" ]; then
+  REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+  SECRETS_FILE="${REPO_ROOT}/deploy/secrets.json"
+  if [ -f "${SECRETS_FILE}" ]; then
+    CLOUDFLARED_TOKEN="$(jq -r '.credentials["cloudflared/tunnel-token"].value // empty' "${SECRETS_FILE}")"
+  fi
+fi
+: "${CLOUDFLARED_TOKEN:?set CLOUDFLARED_TOKEN env var or add cloudflared/tunnel-token to deploy/secrets.json}"
 
 echo "==> Installing cloudflared on ${MINOS_HOST}"
 ssh "${SSH_USER}@${MINOS_HOST}" "CLOUDFLARED_TOKEN='${CLOUDFLARED_TOKEN}' sudo -E bash -s" <<'SSH_EOF'

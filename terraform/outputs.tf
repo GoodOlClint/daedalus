@@ -1,29 +1,25 @@
-# Consolidated outputs. IPs aren't known at plan time (DHCP on the
-# homelab VLAN), so the inventory below exposes hostnames/MACs instead;
-# Ansible can resolve the hostname via DNS or MAC via ARP at run time.
+# Consolidated outputs. VM IPs are harvested from qemu-guest-agent
+# (populated on refresh once the agent is up); LXC IPs aren't exposed
+# by the provider — look up via `ssh root@<crete> pct exec <vmid> --
+# ip -4 addr show eth0` or the homelab DHCP leases. MACs are
+# deterministic for VMs (derived from vm_id + ip_offset) and
+# Proxmox-assigned for LXCs.
 
 output "guests" {
   description = "Map of guest name to its metadata"
   value       = merge(module.vms.guests, module.lxcs.guests)
 }
 
-output "ansible_inventory_yaml" {
-  description = "Ansible-style inventory ready to write to inventory.yaml"
+output "guests_yaml" {
+  description = "YAML-encoded guest inventory, suitable for piping into other tooling"
   value = yamlencode({
-    all = {
-      children = {
-        daedalus = {
-          hosts = {
-            for name, g in merge(module.vms.guests, module.lxcs.guests) :
-            name => {
-              ansible_host  = g.fqdn
-              ansible_user  = var.admin_username
-              guest_type    = g.kind
-              proxmox_vm_id = g.vm_id
-            }
-          }
-        }
-      }
+    for name, g in merge(module.vms.guests, module.lxcs.guests) :
+    name => {
+      hostname = g.fqdn
+      ip       = g.ip
+      type     = g.kind
+      vmid     = g.vm_id
+      mac      = g.mac
     }
   })
 }

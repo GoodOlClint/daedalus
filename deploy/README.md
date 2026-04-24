@@ -137,14 +137,17 @@ One-time in the Cloudflare Zero Trust dashboard:
 2. **Public Hostname** tab → Add public hostname → pick a subdomain on
    a domain you control, service type `HTTP`, URL `localhost:8080`.
 
-Then from the operator workstation:
+Paste the token into `deploy/secrets.json` under
+`cloudflared/tunnel-token`, then:
 
 ```sh
-CLOUDFLARED_TOKEN='<the long token>' deploy/cloudflared-install.sh
+deploy/cloudflared-install.sh
 
 # verify
 curl -v https://<your-hostname>/healthz
 ```
+
+(`CLOUDFLARED_TOKEN=<...>` in env also works and overrides secrets.json.)
 
 ## 6. GitHub App (Cerberus webhooks)
 

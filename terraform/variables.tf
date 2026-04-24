@@ -207,13 +207,15 @@ variable "opnsense_operator_ingress_cidr" {
 
 variable "opnsense_api_key" {
   type        = string
-  description = "Plaintext OPNsense API key id. Seeded into config.xml at bootstrap."
+  description = "Unused since the flat-VLAN pivot (commit d6deef6) removed the OPNsense firewall module. Kept defined so existing tfvars files don't break; delete this + opnsense_* siblings once the opnsense module is removed from modules/."
+  default     = ""
   sensitive   = true
 }
 
 variable "opnsense_api_secret" {
   type        = string
-  description = "Plaintext OPNsense API key secret. Hashed with openssl passwd -6 before landing in config.xml."
+  description = "Unused since the flat-VLAN pivot. See opnsense_api_key above."
+  default     = ""
   sensitive   = true
 }
 
