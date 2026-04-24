@@ -26,7 +26,7 @@
       "max_tool_calls": 200
     },
     "communication": {
-      "surface": "discord"
+      "thread_surface": "discord"
     },
     "thread_parent": "REPLACE_DISCORD_CHANNEL_ID",
     "capabilities": {
