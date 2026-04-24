@@ -1,0 +1,122 @@
+# Copy to vars.auto.tfvars (gitignored) and edit. Credentials are NEVER
+# put here — load them from TF_VAR_* environment variables in your shell:
+#
+#   export TF_VAR_proxmox_endpoint="https://172.16.30.103:8006/"
+#   export TF_VAR_proxmox_api_token='terraform@pve!daedalus=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+#
+# Generate an OPNsense API key pair once and stash in your password
+# manager or Infisical:
+#
+#   export TF_VAR_opnsense_api_key="$(openssl rand -base64 48 | tr -d '=+/' | head -c 40)"
+#   export TF_VAR_opnsense_api_secret="$(openssl rand -base64 48 | tr -d '=+/' | head -c 40)"
+#
+# Terraform seeds both plaintext values into OPNsense's config.xml at
+# bootstrap (the secret is sha512-crypt hashed locally via openssl passwd
+# -6), so the firewall comes up with working API auth on first boot.
+
+proxmox_node      = "crete"
+primary_datastore = "local-zfs"
+image_datastore   = "local"
+
+# --- Proxmox prerequisites on Crete (one-time) ---
+#
+# 1. `local` datastore must have `snippets` + `vztmpl` + `iso` in its
+#    content types (Datacenter > Storage > local > Edit > Content).
+#
+# 2. libguestfs-tools (one-time) — the firewall module virt-customizes
+#    the FreeBSD image to inject /firstboot so nuageinit actually fires
+#    on first boot. FreeBSD's BASIC-CLOUDINIT image ships without the
+#    marker (consumed during image finalization), so without this step
+#    cloud-init silently doesn't run on a fresh VM.
+#
+#      apt install libguestfs-tools
+#
+# 3. Token role needs SDN.Allocate, VM.GuestAgent.Audit etc. Update the
+#    `Terraform` custom role (or whichever role your terraform token has):
+#
+#      pveum role modify Terraform --privs "Datastore.Allocate,\
+#      Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,\
+#      Pool.Allocate,SDN.Allocate,SDN.Audit,SDN.Use,Sys.Audit,Sys.Console,\
+#      Sys.Modify,User.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,\
+#      VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,\
+#      VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,\
+#      VM.GuestAgent.Audit,VM.Migrate,VM.PowerMgmt"
+#
+# --- Two-phase apply on a fresh build ---
+#
+# Ubuntu VMs' cloud-init runs apt on first boot; if OPNsense isn't
+# routing yet, apt fails and qemu-guest-agent never gets installed.
+# `make tf-apply` alone hits this race because Terraform considers the
+# firewall VM "created" the moment Proxmox accepts `qm create`, not
+# when OPNsense has finished bootstrap (~5-10 min: FreeBSD → nuageinit
+# → rc.local → opnsense-bootstrap → reboot → LAN up).
+#
+#   make tf-apply-firewall      # Phase 1: SDN + OPNsense only
+#   # wait until ping 10.100.0.1 from another VM on daedalan works
+#   make tf-apply               # Phase 2: the rest
+#
+# Subsequent applies (no firewall rebuild) can run `make tf-apply`
+# directly — the ordering only matters on cold start.
+
+# 4. Download the Debian 12 LXC template (the Postgres container needs it).
+#    Proxmox bumps point releases often — check what's currently listed:
+#
+#      pveam update
+#      pveam available | grep debian-12-standard
+#      pveam download local debian-12-standard_12.12-1_amd64.tar.zst
+#
+#    Then set debian_lxc_template below to the exact filename you
+#    downloaded (pveam list local to confirm).
+
+# SSH target for the Proxmox node — used by the firewall module to
+# curl+unxz the FreeBSD cloud image into the iso datastore (bpg/proxmox
+# can't decompress xz). Set to an IP if `crete` doesn't resolve from
+# your workstation; leave empty to fall back to proxmox_node.
+proxmox_ssh_host = "172.16.30.103"
+
+# --- Network ---
+# A VLAN-aware Proxmox bridge with NO physical uplink hosts the Daedalus
+# SDN zone. Create it once on Crete:
+#   auto vmbr1
+#   iface vmbr1 inet manual
+#       bridge-ports none
+#       bridge-stp off
+#       bridge-fd 0
+#       bridge-vlan-aware yes
+#       bridge-vids 2-4094
+#
+# `ifreload -a` to apply without a reboot.
+wan_bridge      = "vmbr0"
+internal_bridge = "vmbr1"
+
+sdn_zone         = "daedalus"
+sdn_vnet         = "daedalan"
+daedalus_vlan_id = 200
+daedalus_subnet  = "10.100.0.0/24"
+
+dns_servers = ["1.1.1.1", "9.9.9.9"]
+
+# --- Cloud-init defaults ---
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+admin_username      = "daedalus"
+timezone            = "America/Chicago"
+domain_suffix       = "daedalus.local"
+
+# --- OPNsense firewall ---
+# First apply:
+#   * Downloads the FreeBSD cloud image
+#   * Creates the OPNsense VM with cloud-init user-data that runs
+#     opnsense-bootstrap.sh non-interactively
+#   * Seeds config.xml with WAN dhcp + LAN 10.100.0.1/24 + root SSH key
+#     + the API key pair (hashed)
+# After the VM reboots into OPNsense:
+#   * Operator can SSH to the LAN address via Crete as a jump host:
+#       ssh -J root@crete root@10.100.0.1
+#   * Optionally set opnsense_operator_ingress_cidr to your workstation's
+#     public CIDR so you can reach OPNsense's web UI over WAN.
+#   * Terraform-managed firewall rules land in a follow-up commit once
+#     the browningluke/opnsense provider schema is validated against
+#     a live OPNsense.
+
+opnsense_release               = "24.7"
+opnsense_operator_ingress_cidr = "" # e.g. "172.16.30.0/24"

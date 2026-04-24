@@ -1,0 +1,12 @@
+#cloud-config
+# Minimal probe: prove nuageinit runs at all on this image and can do
+# write_files. If /var/log/nuageinit-ran.txt exists after boot, we're
+# good and can layer things back on top (ssh key, config.xml, rc.local,
+# opnsense-bootstrap). If it doesn't exist, nothing else matters.
+hostname: ${hostname}
+
+write_files:
+  - path: /var/log/nuageinit-ran.txt
+    permissions: "0644"
+    content: |
+      nuageinit ran on ${hostname}

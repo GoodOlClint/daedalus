@@ -1,0 +1,35 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${fqdn}
+manage_etc_hosts: true
+timezone: ${timezone}
+
+users:
+  - name: ${username}
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+%{ if password_hash != "" ~}
+    lock_passwd: false
+    hashed_passwd: ${password_hash}
+%{ else ~}
+    lock_passwd: true
+%{ endif ~}
+    ssh_authorized_keys:
+      - ${ssh_key}
+
+package_update: true
+package_upgrade: true
+packages:
+  - qemu-guest-agent
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - nftables
+  - unattended-upgrades
+  - vim
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+  - systemctl enable --now unattended-upgrades
