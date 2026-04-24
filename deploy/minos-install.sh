@@ -72,7 +72,9 @@ install -d -o daedalus  -g daedalus  -m 0755 /var/log/minos
 install -o root         -g root      -m 0644 "$STAGE/minos.service" /etc/systemd/system/minos.service
 
 systemctl daemon-reload
-systemctl enable --now minos
+systemctl enable minos
+# restart (not just start) so re-runs pick up config/secret/binary changes
+systemctl restart minos
 
 rm -rf "$STAGE"
 
