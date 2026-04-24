@@ -81,7 +81,7 @@ trap on_sigterm TERM INT
 command -v jq  >/dev/null || die "jq not installed in image"
 command -v git >/dev/null || die "git not installed in image"
 command -v gh  >/dev/null || die "gh CLI not installed in image"
-command -v claude-code >/dev/null || die "claude-code not installed in image"
+command -v claude >/dev/null || die "claude (Claude Code CLI) not installed in image"
 [[ -n "${GITHUB_TOKEN:-}" ]] || die "GITHUB_TOKEN not injected"
 
 # Parse envelope
@@ -121,16 +121,16 @@ PROMPT_FILE=$(mktemp)
   fi
 } > "$PROMPT_FILE"
 
-log "invoking claude-code"
-post_status "status" "Running claude-code"
+log "invoking claude"
+post_status "status" "Running claude"
 # Non-interactive: --print emits the final response; --permission-mode acceptEdits
-# lets claude-code apply filesystem edits without a human in the loop.
+# lets claude apply filesystem edits without a human in the loop.
 set +e
-claude-code --print --permission-mode acceptEdits < "$PROMPT_FILE"
+claude --print --permission-mode acceptEdits < "$PROMPT_FILE"
 CC_STATUS=$?
 set -e
-LAST_OUTCOME="claude-code-exit-$CC_STATUS"
-[[ $CC_STATUS -eq 0 ]] || die "claude-code exited $CC_STATUS"
+LAST_OUTCOME="claude-exit-$CC_STATUS"
+[[ $CC_STATUS -eq 0 ]] || die "claude exited $CC_STATUS"
 
 # Commit any changes
 if ! git diff --quiet || ! git diff --cached --quiet; then

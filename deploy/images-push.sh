@@ -24,11 +24,16 @@ SIDECAR_IMAGE="${REGISTRY_PREFIX}/argus-sidecar:${IMAGE_TAG}"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "==> Building ${WORKER_IMAGE}"
-docker build -t "${WORKER_IMAGE}" ./agents/claude-code
+# Operator often on darwin/arm64; labyrinth VM is linux/amd64. Build
+# explicitly for linux/amd64 and load into the local docker store so we
+# can `docker save` it to tar.
+PLATFORM="linux/amd64"
 
-echo "==> Building ${SIDECAR_IMAGE}"
-docker build -f agents/sidecar/argus/Dockerfile -t "${SIDECAR_IMAGE}" .
+echo "==> Building ${WORKER_IMAGE} (${PLATFORM})"
+docker buildx build --platform "${PLATFORM}" --load -t "${WORKER_IMAGE}" ./agents/claude-code
+
+echo "==> Building ${SIDECAR_IMAGE} (${PLATFORM})"
+docker buildx build --platform "${PLATFORM}" --load -f agents/sidecar/argus/Dockerfile -t "${SIDECAR_IMAGE}" .
 
 echo "==> Saving images to tar"
 docker save "${WORKER_IMAGE}" -o "${TMPDIR}/claude-code.tar"
@@ -37,13 +42,16 @@ docker save "${SIDECAR_IMAGE}" -o "${TMPDIR}/argus-sidecar.tar"
 echo "==> scp to labyrinth:/tmp"
 scp "${TMPDIR}/claude-code.tar" "${TMPDIR}/argus-sidecar.tar" "${SSH_USER}@${LABYRINTH_HOST}:/tmp/"
 
-echo "==> k3s ctr images import"
+echo "==> k3s ctr images import (into k8s.io namespace so kubelet can see them)"
 ssh "${SSH_USER}@${LABYRINTH_HOST}" 'sudo bash -s' <<'SSH_EOF'
 set -euo pipefail
-sudo k3s ctr images import /tmp/claude-code.tar
-sudo k3s ctr images import /tmp/argus-sidecar.tar
+# Default `ctr` namespace is "default" but k3s/kubelet pulls from
+# "k8s.io". Import into both so `k3s ctr images ls` shows them and
+# kubelet actually finds them at pod-create time.
+sudo k3s ctr -n k8s.io images import /tmp/claude-code.tar
+sudo k3s ctr -n k8s.io images import /tmp/argus-sidecar.tar
 rm -f /tmp/claude-code.tar /tmp/argus-sidecar.tar
-sudo k3s ctr images ls | grep daedalus/ || true
+sudo k3s ctr -n k8s.io images ls | grep daedalus/ || true
 SSH_EOF
 
 echo "==> Done. Use these image names in minos config:"

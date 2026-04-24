@@ -30,6 +30,9 @@ done
 
 k3s kubectl get nodes
 
+echo "==> Ensuring 'daedalus' namespace exists"
+k3s kubectl create namespace daedalus --dry-run=client -o yaml | k3s kubectl apply -f -
+
 echo
 echo "==> kubeconfig is at /etc/rancher/k3s/k3s.yaml"
 echo "    Pull it back to your workstation, replace 127.0.0.1 with the VM's IP:"
