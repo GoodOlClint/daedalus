@@ -39,8 +39,14 @@ fi
 
 # Pull values from the operator's config + secrets. Iris reuses the
 # admin token (Phase 1 single-admin posture: Iris commissions on the
-# operator's behalf). Anthropic credential falls back to claude-code's
-# OAuth token if no separate Anthropic API key is configured.
+# operator's behalf).
+#
+# Iris requires a real Anthropic API key, NOT the Claude Code OAuth
+# token: bare /v1/messages calls reject OAuth with
+#   "OAuth authentication is currently not supported"
+# The OAuth token works with the `claude` CLI specifically (which the
+# worker pod uses); Iris speaks the Messages API directly. Phase 2 H2
+# routes through Apollo — same constraint, different hop.
 get_secret() {
   jq -r --arg k "$1" '.credentials[$k].value // empty' deploy/secrets.json
 }
@@ -48,9 +54,6 @@ get_secret() {
 IRIS_BEARER=$(get_secret "minos/iris-token")
 IRIS_ADMIN_TOKEN=$(get_secret "minos/admin-token")
 ANTHROPIC_KEY=$(get_secret "anthropic/api-key")
-if [ -z "$ANTHROPIC_KEY" ]; then
-  ANTHROPIC_KEY=$(get_secret "claude-code/oauth-token")
-fi
 
 if [ -z "$IRIS_BEARER" ]; then
   echo "secrets.json missing minos/iris-token" >&2
@@ -61,7 +64,16 @@ if [ -z "$IRIS_ADMIN_TOKEN" ]; then
   exit 1
 fi
 if [ -z "$ANTHROPIC_KEY" ]; then
-  echo "secrets.json missing anthropic/api-key (or claude-code/oauth-token fallback)" >&2
+  cat >&2 <<'MSG'
+secrets.json missing anthropic/api-key.
+
+Iris needs a real Anthropic API key (from https://console.anthropic.com).
+The Claude Code OAuth token used by the worker pod does NOT work for
+this — Anthropic's Messages API rejects OAuth tokens directly with
+'OAuth authentication is currently not supported'.
+
+Add the key to deploy/secrets.json under anthropic/api-key and re-run.
+MSG
   exit 1
 fi
 

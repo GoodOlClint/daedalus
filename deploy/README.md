@@ -221,8 +221,17 @@ The script reads `deploy/config.json` + `deploy/secrets.json`, renders
 - `minos/admin-token` for `POST /tasks` (Iris commissions on the
   operator's behalf — Phase 2 Slice G replaces this with proper
   user-on-behalf-of identity forwarding)
-- `claude-code/oauth-token` (or a separate `anthropic/api-key` if
-  configured) for Claude calls
+- `anthropic/api-key` for Claude calls — **must be a real Anthropic
+  API key from https://console.anthropic.com**, NOT the Claude Code
+  OAuth token. The bare Messages API rejects OAuth tokens with
+  "OAuth authentication is currently not supported"; the OAuth flow
+  is specific to the `claude` CLI binary used by the worker pod.
+
+Add the key to `deploy/secrets.json` under `anthropic/api-key` before
+running `iris-install.sh`. This is a separate billing path from the
+Claude Pro/Max subscription that backs the worker pod's OAuth token —
+Iris's API calls draw from your Anthropic API credit balance. Phase 2
+H2 (Apollo) centralizes this and adds per-project rate limits.
 
 ## 9. End-to-end smoke test
 
