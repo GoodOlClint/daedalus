@@ -105,7 +105,11 @@ func (a *AnthropicClient) Create(ctx context.Context, req CreateRequest) (*Creat
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+a.APIKey)
+	// Anthropic auth: API keys use x-api-key. The Authorization: Bearer
+	// header is the OAuth path, which the bare Messages API rejects with
+	// "OAuth authentication is currently not supported" — so use x-api-key
+	// unambiguously here.
+	httpReq.Header.Set("x-api-key", a.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("anthropic-version", a.Version)
 	resp, err := a.HTTPClient.Do(httpReq)
