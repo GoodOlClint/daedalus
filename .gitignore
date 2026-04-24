@@ -35,3 +35,7 @@ terraform/*.tfvars
 # Docker / compose overrides
 docker-compose.override.yml
 docker-compose.override.yaml
+
+# Deploy — operator-local config with real secrets
+deploy/config.json
+deploy/secrets.json

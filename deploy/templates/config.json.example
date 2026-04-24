@@ -1,0 +1,47 @@
+{
+  "listen_addr": ":8080",
+  "database_url": "postgres://daedalus:REPLACE_POSTGRES_PASSWORD@172.16.140.100:5432/daedalus?sslmode=disable",
+
+  "bearer_secret_ref": "minos/bearer",
+  "admin_token_ref": "minos/admin-token",
+  "github_webhook_secret_ref": "cerberus/github-webhook",
+
+  "minos_pod_url": "http://172.16.140.101:8080",
+
+  "admin": {
+    "surface": "discord",
+    "surface_id": "REPLACE_YOUR_DISCORD_USER_ID"
+  },
+
+  "project": {
+    "id": "daedalus-phase1",
+    "backend": "k3s",
+    "plugin_image": "daedalus/claude-code:local",
+    "argus_sidecar_image": "daedalus/argus-sidecar:local",
+    "agent_mention_handle": "",
+    "default_workspace_size": "small",
+    "default_base_branch": "main",
+    "default_budget": {
+      "wall_clock_seconds": 1800,
+      "max_tool_calls": 200
+    },
+    "communication": {
+      "surface": "discord"
+    },
+    "thread_parent": "REPLACE_DISCORD_CHANNEL_ID",
+    "capabilities": {
+      "injected_credentials": [],
+      "mcp_endpoints": []
+    }
+  },
+
+  "discord": {
+    "bot_token_ref": "hermes/discord-bot-token"
+  },
+
+  "hibernation": {
+    "reminder_after": "24h",
+    "abandon_after": "72h",
+    "sweep_interval": "5m"
+  }
+}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Daedalus Minos control-plane daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=daedalus
+Group=daedalus
+ExecStart=/usr/local/bin/minos \
+  -config /etc/minos/config.json \
+  -provider /etc/minos/secrets.json \
+  -kubeconfig /etc/minos/kubeconfig
+Restart=on-failure
+RestartSec=5s
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/minos
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

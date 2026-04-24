@@ -26,7 +26,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN npm install -g @anthropic-ai/claude-code
 
 # Non-root user; needed because claude-code and npm warn/fail under root.
-RUN useradd -m -s /bin/bash -u 1000 daedalus
+# node:22-bookworm-slim ships its own UID 1000 `node` user — remove it first.
+RUN userdel -r node 2>/dev/null || true \
+ && useradd -m -s /bin/bash -u 1000 daedalus
 USER daedalus
 WORKDIR /home/daedalus
 
