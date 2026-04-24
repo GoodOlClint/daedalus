@@ -68,6 +68,16 @@ Daedalus runs on two physical hosts in this homelab. The architecture is not bou
 | **Crete**  | Hypervisor for Daedalus VMs + LXC     | Minisforum MS-01 · Intel i9-13900H · 96 GB DDR5 · 2× 1 TB NVMe (ZFS mirror) + third M.2 reserved · 2× 2.5 GbE + 2× 10 GbE · Proxmox VE 9.x |
 | **Athena** | Local inference oracle (Phase 3 role) | Mac Studio M4 Max (Z1CD9LL/A) · 40-core GPU · 48 GB unified memory · 1 TB internal · macOS / launchd |
 
+### Why a dedicated Crete host
+
+Worker pods execute LLM-driven code with network access and write privileges on a feature branch. The blast radius of a misbehaving or compromised pod has to terminate at a boundary the agent cannot cross — and shared infrastructure doesn't give you one.
+
+- **Hypervisor-level isolation between control plane and workers.** Minos (which holds credentials and dispatch authority) runs on a separate VM from Labyrinth (which runs the k3s cluster where pods execute). A pod escape stops at the Labyrinth VM boundary; it does not reach Minos's credential injection path or Postgres directly.
+- **Per-guest egress allowlist enforced by the Proxmox firewall.** Each VM has its own vNIC-level rules — Minos, Labyrinth, Postgres, and Ariadne each get only the egress they need. Self-contained on Crete; does not depend on the homelab edge firewall for Daedalus isolation.
+- **Internal traffic never leaves the host.** Minos ↔ Labyrinth, Minos ↔ Postgres, Minos ↔ Ariadne all traverse Proxmox virtual bridges. There is no path for those flows to be observed or intercepted on the physical network.
+- **Fast, local rollback.** Proxmox snapshots on a ZFS mirror let the operator revert a guest in seconds without coordinating with shared storage or other tenants.
+- **Capacity headroom that won't get reclaimed.** Phase 1 footprint is ~32 GB RAM / 10 vCPU; the box has substantial unused capacity reserved for Phase 2/3 growth (Apollo, Hecate, Charon, Asclepius) without contending with unrelated workloads.
+
 Athena is planned to grow into an M5 Ultra Mac Studio cluster interconnected over Thunderbolt 5 with RDMA (macOS 26.2+) to scale inference capacity without changing its architectural contract.
 
 ## Current state — Phase 1 (MVP)
