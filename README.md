@@ -89,12 +89,18 @@ The [full roadmap](docs/roadmap.md) is the authoritative source; this is the sha
 
 ### Phase 2 — Broker layer + pod-class expansion + hardening
 
-Triggered when a second surface, second project, or second admin becomes real — whichever comes first. Not a calendar release; it's pull-based.
+Planned. Full slice decomposition in [`docs/phase-2-plan.md`](docs/phase-2-plan.md); the shape at a glance:
 
-- **Broker extraction** — Hermes surface plugins move to subprocesses (Slack and Teams plugins land once the multi-identity abstraction ships — pods speak as Iris/Minos/Asclepius in threads, not all as "Hermes"). Cerberus becomes a real pluggable broker with more than one verifier. Apollo centralizes external-LLM calls with spend + rate governance. Hecate fronts the secret provider with JWT-authenticated fetches and in-pod credential refresh. Argus extracts into its own service with signed audit ingest from every broker.
-- **Pod-class expansion** — Iris-as-pod with local inference (Ollama). Pythia research pods. Infra (Proxmox/Terraform) pods via a Proxmox MCP broker.
-- **Identity & auth hardening** — Ed25519 JWTs replace HMAC bearers everywhere. Multi-admin and multi-project registries. Per-project capability composition.
-- **Trust boundary tightening** — source tagging on untrusted PR feedback, Mnemosyne cross-run injection tolerance, sanitization expansion.
+- **Slice 0** — close the Phase 1 Iris acceptance bullet (Iris-as-pod on Ollama, NL commission + state query)
+- **Slices F ‖ G** — Ed25519 JWT foundation + github-mcp-server shim (F), identity registry + project registry + shared plugin supervisor (G). Replaces HMAC bearers, `AdminIdentity` scalar, `ProjectConfig` singleton, and the lingering GitHub PAT
+- **Slice J** — extract Argus into its own service with JWT-verified push-event ingest; add Cerberus verifier plugins (GitHub HMAC + Slack signing, library stays in-process)
+- **Slices H1 ‖ H2 ‖ I** — Hecate credentials broker on OpenBao (H1), Apollo external-LLM broker with non-forgeable usage tracking (H2), Hermes subprocess extraction + multi-identity (webhook-based per-message `username`/avatar override) + Slack plugin (I)
+- **Slice K** — trust-boundary primitive in the worker plugin interface, high-blast confirmation tokens bound to operation content, Mnemosyne untrusted-source tagging preserved across context injection
+- **Slice L1** — Themis project-management pod; backlog decomposition and Argus escalation routing
+- **Slices L2–L5** — Momus (PR review), Clio (`docs/**` scoped), Prometheus (release, prod promotion gated on confirmation), Hephaestus (draft ADRs only)
+- **Slice M** — break-glass session minting, minimal admin UI, Iris Phase 2 additions (pairing approval, delegated actions), Proxmox MCP broker + `infra` task type
+
+Teams plugin, Athena dev sandboxes, Pythia research pods, and Asclepius health monitoring are Phase 3.
 
 ### Phase 3 — Expansion
 
@@ -123,6 +129,7 @@ docs/                    · architecture, roadmap, security, build-vs-adopt note
 - [`docs/architecture.md`](docs/architecture.md) — full component taxonomy, envelope spec, recovery semantics
 - [`docs/roadmap.md`](docs/roadmap.md) — phase boundaries and delivery scope (authoritative)
 - [`docs/phase-1-plan.md`](docs/phase-1-plan.md) — the slice decomposition that shipped
+- [`docs/phase-2-plan.md`](docs/phase-2-plan.md) — the Phase 2 slice decomposition
 - [`docs/security.md`](docs/security.md) — threat model + verification paths
 - [`docs/build-vs-adopt.md`](docs/build-vs-adopt.md) — what we could adopt vs build
 - [`deploy/README.md`](deploy/README.md) — operational runbook
