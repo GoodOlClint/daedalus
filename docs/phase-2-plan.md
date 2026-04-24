@@ -459,6 +459,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
 
 - Per-project budget defaults for Phase 2 task types (`review`, `docs`, `release`, `adr`) — placeholder defaults with operational tuning during L2–L5
 - Per-provider plugin language — Go vs Python for the Anthropic plugin (recommendation: Go, matches the broker fleet; only escape to Python if the official Anthropic Python SDK is meaningfully ahead of the Go ecosystem at that point)
+- **Anthropic plugin variants** — bare-API-key plugin (default; preserves non-forgeable usage tracking) vs an OCP-fronted plugin per `build-vs-adopt.md §apollo` candidate-upstream note (routes operator's Claude Pro/Max subscription, `$0` extra cost, but degrades usage tracking to plugin-reported). Decision is per-deployment, not phase-level — Apollo ships both plugin shapes if both make sense to homelab operators
 
 ---
 

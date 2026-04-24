@@ -48,6 +48,8 @@ Candidates: `BerriAI/litellm` (MIT, vendor-backed), `Portkey-AI/gateway` (MIT co
 
 **Recommendation: write in-house, study LiteLLM's permission model.** Apollo is the highest-risk broker to outsource. Borrow LiteLLM's allowlist semantics and Portkey's audit shape as implementation references.
 
+**Candidate upstream for Apollo's Anthropic provider plugin:** `dtzp555-max/ocp` (MIT, JavaScript, single maintainer, March 2026). Localhost proxy that wraps the `claude` CLI and exposes an OpenAI-compatible API; routes traffic through the operator's Claude Pro/Max subscription instead of metered API spend. **Fit:** Apollo's per-provider subprocess pattern wraps it cleanly — OCP becomes one provider plugin among future API-key/OpenAI/Gemini plugins; `$0` extra billing is a real homelab-deployment win. **Gap:** no `anthropic-ratelimit-*` header relay (CLI doesn't surface these), so Apollo's "non-forgeable token counts" property degrades to plugin-reported for OCP-routed traffic — same posture as Phase 1's `claude-code` self-report. Single-maintainer dependency on a narrow Claude-CLI interface that could break on any CLI update. Anthropic ToS posture on programmatic CLI wrapping is unclear. **Use as:** opt-in alternate Anthropic plugin for cost-sensitive single-operator deployments; bare-API-key plugin remains the default for usage-tracking guarantees.
+
 ### mnemosyne
 
 Candidates: `qdrant/mcp-server-qdrant` (Apache-2), `getzep/graphiti` (Apache-2, 20k★, Zep-backed), `modelcontextprotocol/servers#memory` (ref, JSON-file), `subhashdasyam/mem0-server-mcp`, `elvismdev/mem0-mcp-selfhosted`, `iachilles/memento`.
