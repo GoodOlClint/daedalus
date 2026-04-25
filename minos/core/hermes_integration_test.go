@@ -56,7 +56,7 @@ func newTestServerWithHermes(t *testing.T) (kit testServerKit, plugin *fakeplugi
 				ThreadSurface:    "discord",
 				HermesURL:        "http://minos:8081/hermes",
 				ArgusIngestURL:   "http://minos:8081/argus",
-				AriadneIngestURL: "http://ariadne:8082/ingest",
+				ClioIngestURL: "http://clio:8082/ingest",
 			},
 			Capabilities: core.CapabilitiesDefaults{
 				InjectedCredentials: []envelope.InjectedCredential{

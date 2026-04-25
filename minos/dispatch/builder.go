@@ -81,7 +81,7 @@ func BuildPodSpec(ctx context.Context, in BuilderInput) (PodSpec, error) {
 		"ZAKROS_PROJECT_ID":     in.ProjectID,
 		"ZAKROS_THREAD_URL":     in.Envelope.Communication.HermesURL,
 		"ZAKROS_ARGUS_INGEST":   in.Envelope.Communication.ArgusIngestURL,
-		"ZAKROS_ARIADNE_INGEST": in.Envelope.Communication.AriadneIngestURL,
+		"ZAKROS_CLIO_INGEST": in.Envelope.Communication.ClioIngestURL,
 	}
 	if in.MinosURL != "" {
 		plainEnv["ZAKROS_MINOS_URL"] = in.MinosURL

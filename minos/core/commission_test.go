@@ -86,7 +86,7 @@ func newTestServer(t *testing.T) testServerKit {
 				ThreadRef:        "",
 				HermesURL:        "http://minos:8081/hermes",
 				ArgusIngestURL:   "http://minos:8081/argus",
-				AriadneIngestURL: "http://ariadne:8082/ingest",
+				ClioIngestURL: "http://clio:8082/ingest",
 			},
 			Capabilities: core.CapabilitiesDefaults{
 				InjectedCredentials: []envelope.InjectedCredential{
@@ -331,7 +331,7 @@ func TestCommissionUnresolvableCredentialFails(t *testing.T) {
 			PluginImage:          "img",
 			DefaultWorkspaceSize: envelope.WorkspaceSmall,
 			DefaultBaseBranch:    "main",
-			Communication:        envelope.Communication{HermesURL: "http://x", ArgusIngestURL: "http://x", AriadneIngestURL: "http://x"},
+			Communication:        envelope.Communication{HermesURL: "http://x", ArgusIngestURL: "http://x", ClioIngestURL: "http://x"},
 			Capabilities: core.CapabilitiesDefaults{
 				InjectedCredentials: []envelope.InjectedCredential{
 					{EnvVar: "GITHUB_TOKEN", CredentialsRef: "github-app-token"},

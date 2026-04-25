@@ -41,7 +41,7 @@ func TestLoadConfigValid(t *testing.T) {
       "thread_ref": "",
       "hermes_url": "http://localhost/hermes",
       "argus_ingest_url": "http://localhost/argus",
-      "ariadne_ingest_url": "http://localhost/ariadne"
+      "clio_ingest_url": "http://localhost/clio"
     },
     "capabilities": {"injected_credentials": [], "mcp_endpoints": []}
   }

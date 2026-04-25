@@ -36,7 +36,7 @@ The architecture is designed to evolve from a single-agent system toward a multi
 | **Labyrinth** | k3s cluster — ephemeral Daedalus pod workspaces | k3s VM on Crete | 1 |
 | **Minos** | Control plane VM — receives commands, commissions agents, manages lifecycle, composes MCP capability sets | VM on Crete | 1 |
 | **Mnemosyne** | Memory and context service — stores run records, learned facts, and project contexts; serves context blobs at pod spawn and handles memory lookups via MCP broker | Runs alongside Minos | 1 |
-| **Ariadne** | Log archive — collects and stores unstructured log streams from every Zakros component for forensics and debugging | VM on Crete | 1 |
+| **Clio** | Log archive — collects and stores unstructured log streams from every Zakros component for forensics and debugging | VM on Crete | 1 |
 | **Hermes** | Messaging broker — centralizes human-facing communication; pluggable per-surface plugins (Discord, Slack, Teams, Telegram, Matrix, etc.); handles command intake and task-thread posting | Runs alongside Minos | 1 (single plugin, in-process); 2 (multi-plugin, subprocess isolation) |
 | **Cerberus** | Ingress broker — pluggable ingress-path plugins and per-source verification plugins; authenticates inbound webhooks and routes to Minos or Hermes | Runs alongside Minos | 1 (as a library inside Minos: one ingress, one verifier); 2 (standalone broker with plugin layers) |
 | **Daedalus** | AI worker agents — execute tasks, write code, submit PRs | Pods in Labyrinth | 1 |
@@ -46,19 +46,19 @@ The architecture is designed to evolve from a single-agent system toward a multi
 | **Hecate** | Credentials broker — holds credential material, enforces Minos-managed ACLs on every fetch, and serves credentials to pods and Minos-VM broker subprocesses over JWT-authenticated MCP. Replaces Phase 1's Minos-direct push injection once JWT MCP broker auth lands. | Runs alongside Minos | 2 |
 | **Themis** | Project management pod — owns the backlog, decomposes epics into tasks, tracks cross-pod work state, and serves as the routing point for Argus escalations and human-in-the-loop confirmations. Calls Minos's task API to commission work; does not replace Minos's lifecycle/dispatch role. | Pod in Labyrinth | 2 |
 | **Momus** | Code review pod — automated PR review for style, correctness, logic, and architectural drift. Two-stage: local model does full sweep on every PR; items above a confidence threshold escalate through Apollo. Triages before human review rather than replacing it. | Pods in Labyrinth | 2 |
-| **Clio** | Documentation pod — generates and maintains READMEs, API docs, changelogs, and ADRs. Consumes commit history and Momus review output as primary inputs. | Pods in Labyrinth | 2 |
+| **Calliope** | Documentation pod — generates and maintains READMEs, API docs, changelogs, and ADRs. Consumes commit history and Momus review output as primary inputs. | Pods in Labyrinth | 2 |
 | **Prometheus** | DevOps / release pod — pipeline configuration, environment promotion, versioning, artifact publication, release orchestration. Owns the *how it ships* layer, separated from implementation so release logic does not pollute application code. | Pods in Labyrinth | 2 |
 | **Hephaestus** | Architectural assistant — drafts ADRs, surfaces coupling and structural concerns, visualizes topology, presents tradeoffs for human decision. Produces draft artifacts only; does not make autonomous architectural decisions or mutate code or infra. | Pods in Labyrinth | 2 |
 | **Pythia** | Research pods — short-lived, broad internet egress, read-only; invoked by Daedalus agents via the research MCP broker | Pods in Labyrinth | 3 |
 | **Talos** | QA/test pods — provision test environments, exercise features, run integration suites, report results; invoked by Daedalus agents or directly by Minos | Pods in Labyrinth | 3 |
-| **Charon** | Egress proxy — hostname-layer allowlist enforcement for pod egress, per-pod-class policies, request audit to Ariadne | LXC on Crete | 3 |
+| **Charon** | Egress proxy — hostname-layer allowlist enforcement for pod egress, per-pod-class policies, request audit to Clio | LXC on Crete | 3 |
 | **Asclepius** | Infrastructure health monitor — watches every Zakros service and host for liveness, readiness, and resource health; alerts and attempts auto-remediation | LXC on Crete | 3 |
 | **Minotaur** | Red team pod — adversarial reasoning against Zakros itself. Finds non-obvious attack paths, chains vulnerabilities, probes prompt injection against internal agents and MCP brokers. Distinct from a pattern-based security scanner; the work is novel-judgment adversarial synthesis. | Pod in Labyrinth | 3 |
 | **Typhon** | Sandboxed destructive test runner — intentionally breaks things inside isolated workspaces to validate recovery automation. Chaos-engineering counterpart to Minotaur's adversarial reasoning: Typhon breaks infrastructure and code paths; Minotaur breaks agents. | Pod in Labyrinth | 3 |
 
 ### Naming Notes
 
-The project umbrella is **Zakros** — named for the Minoan palace site at Kato Zakro on Crete. Component names are drawn from the Minotaur myth. **Daedalus** is the master craftsman whose works encompass everything built here; individual worker agents are called Daedalus instances, the agents are the builders. Minos is the commissioner who directs their work. Argus is the all-seeing watcher who ensures they stay on course. The Labyrinth is the structure built on Crete where the work happens. Ariadne holds the thread — the record of what happened inside the Labyrinth, available when operators need to retrace an incident. Pythia is the oracle of Delphi — she answers questions but does not act. When Zakros needs to research something beyond its egress boundary, it sends the question to Pythia. Mnemosyne is the Titaness of memory, mother of the Muses — she retains what the agents have learned across runs, so that nothing hard-won is lost when a pod tears down. Hermes is the messenger of the gods, carrying messages between realms — the Hermes broker carries human-facing messages between Zakros and whichever chat surface (Discord, Slack, Teams, Telegram) a project uses. Charon is the ferryman across the Styx, taking payment from travelers to cross the boundary — the Charon proxy checks each pod's credentials before letting its requests pass out to the public internet. Cerberus is the three-headed guard at the gate of Hades — the Cerberus broker checks every inbound request, verifies credentials, and refuses unauthorized passage. Iris is the rainbow goddess who carried messages between the divine and mortal realms, translating what she carried so each side understood — the Iris agent does the same between human conversation and Zakros's structured operations. Asclepius is the god of medicine and healing — the Asclepius service watches the health of every component in the system, alerts when something falls ill, and treats what it can. Apollo is the god of oracles — external LLM APIs are the remote oracles Daedalus agents consult, and the Apollo broker is the service that carries their queries and counts what comes back. Hecate is the goddess of keys, boundaries, and crossroads — her standard epithet *Kleidouchos* means "key-bearer"; the Hecate broker holds credential material and decides, per Minos-set ACLs, which caller may fetch which key. Themis is the goddess of divine order, proper procedure, and right timing — the Themis pod owns the backlog and decomposes work so that what Zakros builds arrives in the correct sequence. Momus is the god of criticism and fault-finding, whose mythological function was identifying flaws in the work of other gods — the Momus pod reviews PRs. Clio is the Muse of history and record-keeping — the Clio pod writes and maintains project documentation. Prometheus is the titan who brought capability into the world and enabled everything else to function — the Prometheus pod owns release engineering, the layer that takes built software and makes it reach production. Hephaestus is the master craftsman of the gods who built the divine infrastructure and created autonomous constructs — Daedalus's divine counterpart, and the Hephaestus pod is the architectural assistant, drafting decisions rather than making them. Minotaur is the monster kept in the Labyrinth — the Minotaur pod is the adversarial agent that prowls the Labyrinth looking for weaknesses in Zakros itself. Typhon is the primordial monster of chaos and storms — the Typhon pod is the destructive test runner, breaking infrastructure and code paths on purpose to validate that recovery works.
+The project umbrella is **Zakros** — named for the Minoan palace site at Kato Zakro on Crete. Component names are drawn from the Minotaur myth. **Daedalus** is the master craftsman whose works encompass everything built here; individual worker agents are called Daedalus instances, the agents are the builders. Minos is the commissioner who directs their work. Argus is the all-seeing watcher who ensures they stay on course. The Labyrinth is the structure built on Crete where the work happens. Clio is the Muse of history and record-keeping — she keeps the record of what happened inside the Labyrinth, available when operators need to retrace an incident. Pythia is the oracle of Delphi — she answers questions but does not act. When Zakros needs to research something beyond its egress boundary, it sends the question to Pythia. Mnemosyne is the Titaness of memory, mother of the Muses — she retains what the agents have learned across runs, so that nothing hard-won is lost when a pod tears down. Hermes is the messenger of the gods, carrying messages between realms — the Hermes broker carries human-facing messages between Zakros and whichever chat surface (Discord, Slack, Teams, Telegram) a project uses. Charon is the ferryman across the Styx, taking payment from travelers to cross the boundary — the Charon proxy checks each pod's credentials before letting its requests pass out to the public internet. Cerberus is the three-headed guard at the gate of Hades — the Cerberus broker checks every inbound request, verifies credentials, and refuses unauthorized passage. Iris is the rainbow goddess who carried messages between the divine and mortal realms, translating what she carried so each side understood — the Iris agent does the same between human conversation and Zakros's structured operations. Asclepius is the god of medicine and healing — the Asclepius service watches the health of every component in the system, alerts when something falls ill, and treats what it can. Apollo is the god of oracles — external LLM APIs are the remote oracles Daedalus agents consult, and the Apollo broker is the service that carries their queries and counts what comes back. Hecate is the goddess of keys, boundaries, and crossroads — her standard epithet *Kleidouchos* means "key-bearer"; the Hecate broker holds credential material and decides, per Minos-set ACLs, which caller may fetch which key. Themis is the goddess of divine order, proper procedure, and right timing — the Themis pod owns the backlog and decomposes work so that what Zakros builds arrives in the correct sequence. Momus is the god of criticism and fault-finding, whose mythological function was identifying flaws in the work of other gods — the Momus pod reviews PRs. Calliope is the Muse of epic poetry and eloquence — the Calliope pod writes and maintains project documentation. Prometheus is the titan who brought capability into the world and enabled everything else to function — the Prometheus pod owns release engineering, the layer that takes built software and makes it reach production. Hephaestus is the master craftsman of the gods who built the divine infrastructure and created autonomous constructs — Daedalus's divine counterpart, and the Hephaestus pod is the architectural assistant, drafting decisions rather than making them. Minotaur is the monster kept in the Labyrinth — the Minotaur pod is the adversarial agent that prowls the Labyrinth looking for weaknesses in Zakros itself. Typhon is the primordial monster of chaos and storms — the Typhon pod is the destructive test runner, breaking infrastructure and code paths on purpose to validate that recovery works.
 
 **Icarus** is not a component. It is the post-mortem document written when a Daedalus agent ignores Argus and affects something it should not have.
 
@@ -95,14 +95,14 @@ Proxmox snapshots provide fast in-place rollback for Zakros VMs. Zakros state is
 | Minos | VM | 2 | 8GB | 50GB | Control plane — hosts Minos core, Mnemosyne, Hermes (single plugin, in-process), Cerberus-minimal (as library inside Minos), and the Phase 1 Argus logic bundled into Minos |
 | Postgres | LXC | 2 | 4GB | 50GB | Shared database with pgvector; backing store for Minos core, Argus state, and Mnemosyne |
 | Labyrinth (k3s) | VM | 4 | 16GB | 200GB | Daedalus and Iris pods |
-| Ariadne | VM | 2 | 4GB | 100GB | Log archive (Vector + Loki) |
+| Clio | VM | 2 | 4GB | 100GB | Log archive (Vector + Loki) |
 | **Total** | | **10** | **32GB** | **~400GB** | Zakros-only footprint; ~64GB RAM and 10 CPU threads available for co-resident workloads |
 
 Phase 2 and Phase 3 adjustments (Apollo/Argus extraction, Charon LXC, Asclepius LXC, etc.) grow this footprint; revisit sizing then.
 
 ### Network
 
-Crete connects to the homelab switch via a single trunked port carrying all required VLANs. Internal traffic between Zakros guests (Minos ↔ Labyrinth, Minos ↔ Postgres LXC, Minos ↔ Ariadne) traverses Proxmox virtual bridges and never leaves the host. Traffic leaving Crete (to Athena, to external GitHub/Discord, inbound webhooks) is gated at each guest's vNIC by the Proxmox firewall, which holds each guest's egress allowlist and inbound rules.
+Crete connects to the homelab switch via a single trunked port carrying all required VLANs. Internal traffic between Zakros guests (Minos ↔ Labyrinth, Minos ↔ Postgres LXC, Minos ↔ Clio) traverses Proxmox virtual bridges and never leaves the host. Traffic leaving Crete (to Athena, to external GitHub/Discord, inbound webhooks) is gated at each guest's vNIC by the Proxmox firewall, which holds each guest's egress allowlist and inbound rules.
 
 For the Labyrinth VM, Proxmox firewall enforces the *union* allowlist — everything any pod class or k3s system component needs. Per-pod-class differentiation (narrow Zakros egress vs broad Pythia egress in Phase 2) happens inside the VM via a host firewall and k3s NetworkPolicy; see §16.
 
@@ -114,7 +114,7 @@ The homelab's edge firewall remains in place for broader VLAN policy and ingress
 
 ### Role
 
-Athena is a passive oracle. It answers inference queries from agents and from Minos. It does not have access to agent workspaces and does not hold case data or source code. Athena does not initiate connections to Crete-hosted resources *except* for one-way log shipping to Ariadne — see Observability below. Outbound connections to external services (e.g., model registry pulls) are permitted.
+Athena is a passive oracle. It answers inference queries from agents and from Minos. It does not have access to agent workspaces and does not hold case data or source code. Athena does not initiate connections to Crete-hosted resources *except* for one-way log shipping to Clio — see Observability below. Outbound connections to external services (e.g., model registry pulls) are permitted.
 
 ### Services
 
@@ -201,18 +201,18 @@ For each `sandbox.create`:
 3. Archive the workdir if retention is configured, otherwise delete
 4. Return the sandbox user and the allocated ports to their pools
 
-**Secrets at setup.** If setup requires credentials (e.g., a read-only deploy key for a private repo), the MCP resolves them via the configured secret provider (§6) and injects them as environment variables when launching the sandbox. Names — not values — are logged to Ariadne. Sandboxed code is expected to consume and clear secrets as part of its setup; the MCP does not police post-setup environment state.
+**Secrets at setup.** If setup requires credentials (e.g., a read-only deploy key for a private repo), the MCP resolves them via the configured secret provider (§6) and injects them as environment variables when launching the sandbox. Names — not values — are logged to Clio. Sandboxed code is expected to consume and clear secrets as part of its setup; the MCP does not police post-setup environment state.
 
-**Phase 3 scope:** one active sandbox per agent per task to prevent accidental proliferation. Sandbox auth is a per-caller operation on the Athena MCP and inherits the `security.md §7` design once that lands. Full sandbox lifecycle events (create, destroy, teardown, resource-limit breaches) are logged to Ariadne.
+**Phase 3 scope:** one active sandbox per agent per task to prevent accidental proliferation. Sandbox auth is a per-caller operation on the Athena MCP and inherits the `security.md §7` design once that lands. Full sandbox lifecycle events (create, destroy, teardown, resource-limit breaches) are logged to Clio.
 
 ### Observability
 
-Athena ships its service logs to Ariadne via Vector, mirroring the log-shipping pattern used by every other Zakros component. This is the single permitted exception to the no-initiate-to-Crete-resources rule:
+Athena ships its service logs to Clio via Vector, mirroring the log-shipping pattern used by every other Zakros component. This is the single permitted exception to the no-initiate-to-Crete-resources rule:
 
 - **Shipped:** Ollama, embedding server, Qdrant, whisper, Athena MCP, and Development Sandbox process logs
-- **Purpose:** let operators correlate agent flows end-to-end in one place (Ariadne) — an inference query from a pod can be traced through the agent's conversation log, the MCP call, and the inference-side execution
+- **Purpose:** let operators correlate agent flows end-to-end in one place (Clio) — an inference query from a pod can be traced through the agent's conversation log, the MCP call, and the inference-side execution
 - **Shape:** one-way, fire-and-forget, append-only log stream; not a control channel
-- **Constraint:** Athena cannot use this connection to pull state, receive commands, or trigger actions. The log-shipping exception exists solely to populate Ariadne's forensic index
+- **Constraint:** Athena cannot use this connection to pull state, receive commands, or trigger actions. The log-shipping exception exists solely to populate Clio's forensic index
 
 The rest of Athena's interaction surface remains inbound-only from Crete's side. Inference queries and MCP operations continue to flow from Minos and agents to Athena; only Vector's log shipping runs in the opposite direction.
 
@@ -283,7 +283,7 @@ External service → ingress plugin → Cerberus core
   → route matched by path or headers
   → verification plugin validates signature/HMAC/timestamp
   → on success: forward to internal target (Minos, Hermes, etc.)
-  → on failure: drop request, log to Ariadne, emit push event to Argus
+  → on failure: drop request, log to Clio, emit push event to Argus
 ```
 
 Ingress-plugin selection is a deployment choice, not a per-request choice — one ingress plugin serves all inbound traffic at a time. Multiple plugins can coexist for migration periods.
@@ -302,7 +302,7 @@ Ingress-plugin selection is a deployment choice, not a per-request choice — on
 
 **Credentials.** HMAC secrets and verification keys live in the configured secret provider. Each verification plugin loads its secrets at startup and on rotation (same SIGHUP pattern as Hermes plugins).
 
-**Audit.** Every inbound request — verified or rejected — logs to Ariadne with `(timestamp, ingress_plugin, target_route, verification_result, delivery_id, outcome)`. Rejected requests emit push events to Argus; a sustained rejection pattern is a signal of broken deployment or active probing and can be escalated.
+**Audit.** Every inbound request — verified or rejected — logs to Clio with `(timestamp, ingress_plugin, target_route, verification_result, delivery_id, outcome)`. Rejected requests emit push events to Argus; a sustained rejection pattern is a signal of broken deployment or active probing and can be escalated.
 
 **Recovery.** Cerberus state (route table, replay-ID window) is persisted in Postgres alongside Minos's other state. On restart, Cerberus reloads its route table and verification plugins; replay-ID tracking survives because it's DB-backed. Ingress plugins reconnect to their upstream (Cloudflare, Tailscale) using credentials from the secret provider.
 
@@ -333,7 +333,7 @@ Every external LLM API call from a Daedalus agent flows through **Apollo**, an M
 - **Centralized API keys** — provider API keys live in the secret provider and are loaded only by Apollo. No pod holds Anthropic or OpenAI credentials directly.
 - **Rate limiting** — per-project, per-user, per-model caps enforced at the broker
 - **Response caching** — optional, for repeated identical queries
-- **Audit trail** — every call to Ariadne with `(pod, project, provider, model, prompt-hash, tokens_in, tokens_out, duration, outcome)`
+- **Audit trail** — every call to Clio with `(pod, project, provider, model, prompt-hash, tokens_in, tokens_out, duration, outcome)`
 - **Cost allocation** — usage rolled up by project and commissioning identity for billing-style reporting
 
 **Architecture:**
@@ -354,7 +354,7 @@ Pod's worker backend → Apollo MCP (scoped: apollo.infer for the requested mode
   → Response + usage metrics captured
   → Apollo records usage to Postgres (project + task aggregates) and pushes a usage event to Argus
   → Apollo returns response to pod
-  → Apollo logs the call to Ariadne
+  → Apollo logs the call to Clio
 ```
 
 **MCP scopes** on pods' JWTs determine which models a given pod may use. Example: a Zakros code pod's JWT might include `apollo.anthropic.claude-*`; an inference-tuning task might include `apollo.anthropic.*, apollo.openai.*`. Scope maps are declared in the project registry.
@@ -413,7 +413,7 @@ Commissioning work requires an authenticated identity. Identity is a tuple `(sur
 | `task.commission.infra` | Commission infrastructure tasks (task type lands in Phase 2) |
 | `task.commission.inference-tuning` | Commission inference-tuning tasks |
 | `task.commission.review` | Commission PR-review tasks (Momus, Phase 2) |
-| `task.commission.docs` | Commission documentation tasks (Clio, Phase 2) |
+| `task.commission.docs` | Commission documentation tasks (Calliope, Phase 2) |
 | `task.commission.release` | Commission release tasks (Prometheus, Phase 2) |
 | `task.commission.adr` | Commission ADR-draft tasks (Hephaestus, Phase 2) |
 | `task.commission.research` | Commission research tasks (Pythia, Phase 3) |
@@ -456,7 +456,7 @@ Pairing tokens expire after a configurable window. If no admin approves in time,
 
 **Revocation.** An admin can revoke any identity, including another admin's. Revocation is immediate — tasks already running from the revoked identity complete on their existing trajectory but no new commissions are accepted. Minos refuses to revoke the last active admin. `system` identities carry **no** last-identity protection; revoking the only Themis identity, for example, disables autonomous backlog commissioning until a replacement is provisioned via an edit to the `system_identities` block in `deploy/config.json`. The protection exists to prevent human lock-out of the control plane — `system` identities are deployment artifacts, not reachability guarantees, so the protection does not apply.
 
-**Audit.** Every pairing request, approval, revocation, and commission is written to Ariadne. Commissions carry both `origin.requester` (the commissioning identity tuple) and `origin.requester_role` (the role as of commission time) — `system`-origin commissions are distinguishable from human ones directly on the log line, with no query-time join against the identity registry required. This preserves the role-at-commission even if the identity's role changes or is revoked later, which is the state forensics actually wants after a compromised-pod incident. The identity registry itself lives in Minos's Postgres schema for operational lookup; Ariadne queries do not depend on it.
+**Audit.** Every pairing request, approval, revocation, and commission is written to Clio. Commissions carry both `origin.requester` (the commissioning identity tuple) and `origin.requester_role` (the role as of commission time) — `system`-origin commissions are distinguishable from human ones directly on the log line, with no query-time join against the identity registry required. This preserves the role-at-commission even if the identity's role changes or is revoked later, which is the state forensics actually wants after a compromised-pod incident. The identity registry itself lives in Minos's Postgres schema for operational lookup; Clio queries do not depend on it.
 
 **Phase 2: admin web UI.** A Phase 2 web UI exposes the identity registry, pending pairings, scope assignment, and recent activity. Same underlying state and operations; different surface for human interaction. Hosted on Minos behind whatever ingress path `security.md §2` settles on.
 
@@ -464,7 +464,7 @@ Pairing tokens expire after a configurable window. If no admin approves in time,
 
 **Phase:** Break-glass session minting is **Phase 2**. In Phase 1, the single operator uses kubectl directly from the Minos VM (SSH-to-Minos-VM with standard OS-level auth) for inspection. Post-termination snapshot access is **Phase 3** (depends on the CSI snapshotter).
 
-When an agent misbehaves or an incident needs investigation, operators need inspection access beyond the task thread's scrollback. Break-glass is Minos-brokered: operators request a session through any Hermes surface, Minos validates identity and mints short-lived credentials, and every session is audited in Ariadne.
+When an agent misbehaves or an incident needs investigation, operators need inspection access beyond the task thread's scrollback. Break-glass is Minos-brokered: operators request a session through any Hermes surface, Minos validates identity and mints short-lived credentials, and every session is audited in Clio.
 
 **Capabilities** (extending the Phase 1 capability set from Command Intake and Pairing):
 
@@ -486,7 +486,7 @@ When an agent misbehaves or an incident needs investigation, operators need insp
    - Session TTL default 30 minutes, configurable, extendable on additional operator approval
 4. Minos returns a kubectl config (cluster API endpoint, CA, token) via DM on the operator's surface
 5. Minos writes an audit record: `(operator, task_id, pod, level, reason, issued_at, expires_at)`
-6. Operator uses kubectl with the session credentials. k3s audit log captures every API call and ships to Ariadne
+6. Operator uses kubectl with the session credentials. k3s audit log captures every API call and ships to Clio
 7. On session expiry (or explicit close), the SA token is revoked and the audit record closed
 
 **Post-termination snapshot access.**
@@ -497,7 +497,7 @@ When a pod terminates (Argus termination or normal teardown), Argus may have tri
 - Access requires `break_glass.observe`. Minos exposes `/minos snapshot-fetch <task_id>` which mounts the snapshot read-only and returns session credentials as above
 - Snapshot retention is per-project configuration with a default of 30 days
 
-**Audit.** Every break-glass session — request, approval, credentials issued, each kubectl call, session close — lands in Ariadne with full operator identity, task context, and reason. Repeated break-glass activity on the same task or operator is a legitimate pattern Ariadne surfaces for review rather than a guardrail breach (contrast with a compromised pod, which triggers Argus termination).
+**Audit.** Every break-glass session — request, approval, credentials issued, each kubectl call, session close — lands in Clio with full operator identity, task context, and reason. Repeated break-glass activity on the same task or operator is a legitimate pattern Clio surfaces for review rather than a guardrail breach (contrast with a compromised pod, which triggers Argus termination).
 
 **Scope: pods only.** Break-glass covers agent pods. Minos-VM services (Minos, Argus, Hermes, Cerberus, Mnemosyne) are not in scope for break-glass; operator access to those is SSH-to-Minos-VM with standard OS-level auth, outside Zakros's identity model. The reason: break-glass exists for investigating agent behavior, not for administering the control plane. Control-plane administration is a different trust boundary with different audit and access requirements.
 
@@ -612,11 +612,11 @@ Minos holds the signing key; brokers hold Minos's public key (distributed at bro
 
 **Scope namespaces.** Each broker declares its operation space. Scopes are strings namespaced by broker. These are **MCP broker scopes** — carried on a pod's Minos-minted JWT and checked per call; they are distinct from **identity capabilities** (`task.commission.*`, `task.direct`, `break_glass.*`, etc., defined in Command Intake and Pairing), which gate what a human identity may ask Minos to do. MCP broker scopes gate what a pod may call through a broker; identity capabilities gate what an identity may commission. They are not interchangeable and never appear on the same token.
 
-The table below groups brokers by role: external/infra first (`github`, `proxmox`, `athena`), then state/domain (`apollo`, `mnemosyne`, `research`), then internal orchestration (`thread`, `hecate`, `hermes`, `minos`), then observability (`asclepius`, `ariadne`). New broker rows slot into the matching group.
+The table below groups brokers by role: external/infra first (`github`, `proxmox`, `athena`), then state/domain (`apollo`, `mnemosyne`, `research`), then internal orchestration (`thread`, `hecate`, `hermes`, `minos`), then observability (`asclepius`, `clio`). New broker rows slot into the matching group.
 
 | Broker | Example scopes |
 |---|---|
-| `github` | `clone`, `push`, `pr.create`, `pr.update`, `pr.comment`, `issue.create`, `issue.update`. Write scopes accept path-qualified forms (e.g., `pr.create:docs/**`, `push:docs/adr/proposed/**`); the broker enforces the path filter on every call because GitHub installation tokens are repo-scoped, not path-scoped — path scoping lives at the broker, not the token. Used by Clio (§13), Prometheus (§14), Hephaestus (§15). |
+| `github` | `clone`, `push`, `pr.create`, `pr.update`, `pr.comment`, `issue.create`, `issue.update`. Write scopes accept path-qualified forms (e.g., `pr.create:docs/**`, `push:docs/adr/proposed/**`); the broker enforces the path filter on every call because GitHub installation tokens are repo-scoped, not path-scoped — path scoping lives at the broker, not the token. Used by Calliope (§13), Prometheus (§14), Hephaestus (§15). |
 | `proxmox` | `vm.list`, `vm.status`, `vm.create`, `vm.destroy`, `vm.power.on`, `vm.power.off` |
 | `athena` | `inference.query`, `models.list`, `models.pull`, `models.load`, `sandbox.create`, `sandbox.destroy`, `corpus.refresh` |
 | `apollo` | `apollo.infer` (with per-provider/per-model sub-scopes like `apollo.anthropic.claude-*`, `apollo.openai.gpt-*`) |
@@ -627,7 +627,7 @@ The table below groups brokers by role: external/infra first (`github`, `proxmox
 | `hermes` | `post_as_iris`, `events.next` (Iris only — see Cross-thread posting enforcement and Inbound message delivery). Other Hermes operations are proxied through the `thread` sidecar, not called via `hermes.*` scopes directly. |
 | `minos` | `query_state` — read-only access to Minos's state API (task list, queue depth, recent activity). Iris uses this to answer "what's running?"-style questions. Commissions and directs are user-on-behalf-of and travel the identity-capability path, not a pod JWT scope. |
 | `asclepius` | `status`, `history`, `check.run`, `remediate` (high-blast; Phase 3). |
-| `ariadne` | `query` — recent-log queries; Iris uses this to answer "what did Zakros do on X?" style questions. |
+| `clio` | `query` — recent-log queries; Iris uses this to answer "what did Zakros do on X?" style questions. |
 
 **Request flow.** Pod sends an HTTP request to the broker with `Authorization: Bearer <jwt>`. The broker:
 
@@ -637,7 +637,7 @@ The table below groups brokers by role: external/infra first (`github`, `proxmox
 4. Checks that `mcp_scopes[<broker_name>]` includes the requested operation
 5. If all pass, processes the request; otherwise returns 403 with a structured error naming the failing check
 
-**Audit.** Every call — allowed or denied — is logged to Ariadne with `(timestamp, pod_id, broker, operation, scope_matched, outcome, jti)`. Denied calls are also pushed to Argus as events; repeated denials from the same pod are a guardrail breach that triggers escalation and, per §7, termination.
+**Audit.** Every call — allowed or denied — is logged to Clio with `(timestamp, pod_id, broker, operation, scope_matched, outcome, jti)`. Denied calls are also pushed to Argus as events; repeated denials from the same pod are a guardrail breach that triggers escalation and, per §7, termination.
 
 **Rotation.** JWTs carry a 2-hour default TTL; hibernation and respawn naturally rotate them (new run = new token). Minos's signing key itself rotates on a configurable schedule; rotation invalidates all outstanding tokens simultaneously — the emergency-revocation lever. Phase 2 in-pod credential refresh (see Credential Handling above) also refreshes the MCP JWT for long-running pods.
 
@@ -701,7 +701,7 @@ Minos does not write code, run tests, make infrastructure changes, or call infer
 
 ### Role
 
-Argus is the behavioral monitor. Where Minos manages lifecycle, Argus monitors behavior. It decides — warn, escalate, terminate — based on structured events it consumes from sources the agent cannot suppress or forge. It does not archive logs; Ariadne does that. Argus runs alongside Minos on the Minos VM.
+Argus is the behavioral monitor. Where Minos manages lifecycle, Argus monitors behavior. It decides — warn, escalate, terminate — based on structured events it consumes from sources the agent cannot suppress or forge. It does not archive logs; Clio does that. Argus runs alongside Minos on the Minos VM.
 
 ### Telemetry Sources
 
@@ -757,7 +757,7 @@ Admin-configured escalation classes (high-blast scope breach, repeated pod crash
 
 Argus is itself monitored by Minos. Minos polls Argus's health endpoint on a short cadence; three consecutive failures trigger a service restart. Repeated restart cycles within a window escalate to admins on their configured surfaces for human attention. Because Argus and Minos co-reside on the same VM, this is a local-process check. The Minos VM is the remaining trust anchor.
 
-Argus does not depend on Ariadne for decisions. If Ariadne is down, Argus continues to evaluate agent state from its own event stream; if Argus is down, the control path degrades but Ariadne continues to collect logs via direct pod shipping.
+Argus does not depend on Clio for decisions. If Clio is down, Argus continues to evaluate agent state from its own event stream; if Argus is down, the control path degrades but Clio continues to collect logs via direct pod shipping.
 
 **Postgres outage — Phase 1 fail-silent.** Argus state (per-agent counters, threshold configuration) lives in the shared Postgres LXC. If Postgres is unreachable, Phase 1 Argus cannot persist state transitions and cannot fire warnings or escalations it has not already decided on in memory. **Phase 1 posture is fail-silent on Postgres loss**: the control path degrades, running pods continue on their existing trajectories, and the operator notices via the Proxmox-level VM-health alert on the Postgres LXC — not via Argus. This is an accepted Phase 1 risk for a single-operator single-VM deployment with no Asclepius. Phase 3 (when Asclepius lands) adds a Zakros-native alert path for Postgres loss; Phase 2+ may add in-memory degraded mode to Argus itself if operational experience warrants.
 
@@ -894,7 +894,7 @@ Every pod Minos commissions receives a JSON task definition at spawn. The schema
     "thread_ref": "surface-specific thread/channel/DM id",
     "hermes_url": "https://hermes.internal",
     "argus_ingest_url": "https://argus.internal/ingest",
-    "ariadne_ingest_url": "https://ariadne.internal/logs"
+    "clio_ingest_url": "https://clio.internal/logs"
   },
 
   "capabilities": {
@@ -960,12 +960,12 @@ Minos injects a task-appropriate MCP set in the `capabilities.mcp_endpoints` fie
 | Research (Pythia) | Athena MCP `inference.query` for summarization (broker-fronted, JWT-scoped — distinct from the direct-Ollama path local-model-backend pods use; see §11–§14), Charon egress (broad outbound); no Thread sidecar — responses flow through the research broker back to the caller | 3 |
 | Test (Talos) | GitHub (read), Proxmox API (test-environment provisioning), Thread sidecar (→ Hermes), test-environment target access | 3 |
 | Review (Momus) | GitHub (`pr.read`, `pr.comment`), Apollo (escalation tier), Mnemosyne (`memory.lookup`), Thread sidecar (→ Hermes) | 2 |
-| Docs (Clio) | GitHub (`repo.read`, `pr.create` scoped to `docs/**`), Mnemosyne (`memory.lookup`), Thread sidecar (→ Hermes) | 2 |
+| Docs (Calliope) | GitHub (`repo.read`, `pr.create` scoped to `docs/**`), Mnemosyne (`memory.lookup`), Thread sidecar (→ Hermes) | 2 |
 | Release (Prometheus) | GitHub (release-paths scope), Proxmox API (environment promotion), artifact publisher, Thread sidecar (→ Hermes) | 2 |
 | ADR (Hephaestus) | GitHub (`repo.read`, `pr.create` scoped to `docs/adr/proposed/**` and `docs/reports/**`), Mnemosyne (`memory.lookup`), Apollo (Sonnet/Opus), Thread sidecar (→ Hermes) | 2 |
 | PM (Themis) | Minos (`query_state` via pod JWT; commission/cancel travel the identity-capability path under Themis's system identity — see §11 Authority Model), Mnemosyne (`memory.lookup`, `memory.get_context`), Argus escalation ingest, Thread sidecar (via Iris fan-out) | 2 |
 
-This table lists MCP-scoped broker reaches only. Non-MCP network reaches — direct-HTTP calls to Athena's Ollama port by local-model-backend pods, in particular — appear in the per-pod Capabilities tables in §11–§14 (Themis, Momus, Clio, Prometheus) and in §10's Pod Configuration network-reach row for Iris, plus the §16 egress rows. §15 Hephaestus has no direct-Ollama reach (Claude-tier via Apollo only); §9 Pythia reaches Athena only through the `inference.query` MCP broker path, not via direct Ollama. §16 is the canonical "what reaches what" surface if the two ever disagree.
+This table lists MCP-scoped broker reaches only. Non-MCP network reaches — direct-HTTP calls to Athena's Ollama port by local-model-backend pods, in particular — appear in the per-pod Capabilities tables in §11–§14 (Themis, Momus, Calliope, Prometheus) and in §10's Pod Configuration network-reach row for Iris, plus the §16 egress rows. §15 Hephaestus has no direct-Ollama reach (Claude-tier via Apollo only); §9 Pythia reaches Athena only through the `inference.query` MCP broker path, not via direct Ollama. §16 is the canonical "what reaches what" surface if the two ever disagree.
 
 ### Trust Boundary and Untrusted Content
 
@@ -1006,7 +1006,7 @@ Exposed operations:
 
 **Argus sidecar** — emits a periodic heartbeat to the Argus event ingest endpoint independent of the agent's own activity. Runs as a separate container so that a hung or compromised worker backend cannot suppress it. The heartbeat is the primary stall-detection signal for Argus.
 
-**Default for all pod classes.** The two sidecars, the trust-boundary contract, and the per-backend translation responsibility described above are the **default contract for every worker-backend pod class in Zakros** — Iris (§10), Themis (§11), Momus (§12), Clio (§13), Prometheus (§14), Hephaestus (§15), Pythia (§9), Talos, Minotaur, and Typhon all inherit this shape unless their own section explicitly deviates. Sections that deviate call it out explicitly: Pythia (§9) replaces the thread sidecar with research-broker response flow; Iris (§10) has no Argus sidecar in Phase 1 (§10 Phase 1 stall gap). No other pod class should be read as silently opting out — if its section is silent on sidecars, the §8 default applies.
+**Default for all pod classes.** The two sidecars, the trust-boundary contract, and the per-backend translation responsibility described above are the **default contract for every worker-backend pod class in Zakros** — Iris (§10), Themis (§11), Momus (§12), Calliope (§13), Prometheus (§14), Hephaestus (§15), Pythia (§9), Talos, Minotaur, and Typhon all inherit this shape unless their own section explicitly deviates. Sections that deviate call it out explicitly: Pythia (§9) replaces the thread sidecar with research-broker response flow; Iris (§10) has no Argus sidecar in Phase 1 (§10 Phase 1 stall gap). No other pod class should be read as silently opting out — if its section is silent on sidecars, the §8 default applies.
 
 ---
 
@@ -1024,7 +1024,7 @@ The interaction pattern is request/response. A Daedalus agent invokes a research
 
 | Resource | Daedalus pod | Pythia pod |
 |---|---|---|
-| Internet egress | Proxmox firewall allowlist (GitHub, package registries, internal services including Hermes, Athena, Argus, Ariadne) | Broad outbound HTTPS (via Charon in Phase 2) |
+| Internet egress | Proxmox firewall allowlist (GitHub, package registries, internal services including Hermes, Athena, Argus, Clio) | Broad outbound HTTPS (via Charon in Phase 2) |
 | GitHub write | Yes (`agent/**` scope) | No |
 | Filesystem persistence | Ephemeral workspace within the pod | Ephemeral scratch; no external write |
 | MCP capabilities | Task-appropriate set (Code/PR, Infra, etc.) | Athena MCP `inference.query` for summarization (broker-fronted, JWT-scoped — distinct from the direct-Ollama path local-model-backend pods use; see §11–§14); local file scratch |
@@ -1109,7 +1109,7 @@ Iris's own scopes (once the JWT layer lands in Phase 2):
 |---|---|
 | `minos.query_state` | List tasks, queue, recent activity via Minos's state API |
 | `mnemosyne.memory.lookup` | Semantic search over project memory |
-| `ariadne.query` | Recent-log queries |
+| `clio.query` | Recent-log queries |
 | `hermes.events.next` | Long-poll inbound message delivery (mentions, DMs, Iris-targeted slash commands) |
 | `hermes.post_as_iris` | Post replies bound to a specific inbound message, scoped to the originating thread |
 
@@ -1124,7 +1124,7 @@ For user-delegated actions (commission, direct, approve), Iris does *not* use it
 | Backend | Phase 1: Ollama-hosted model on Athena, reached via the Athena inference port. Other backends (Claude Code, custom) are Phase 2+ alternatives. |
 | Resource tier | `medium` workspace size default (handles conversation context windows) |
 | Sidecars | Thread sidecar (→ Hermes); Argus sidecar is Phase 2 when Argus extracts as a service |
-| Network reach | Hermes (Minos VM), Minos state API (Minos VM), Mnemosyne MCP (Minos VM), Ariadne query API (Ariadne VM), Athena Ollama port |
+| Network reach | Hermes (Minos VM), Minos state API (Minos VM), Mnemosyne MCP (Minos VM), Clio query API (Clio VM), Athena Ollama port |
 | Trust boundary | User messages are untrusted content; Iris applies best-effort framing in Phase 1, formal trust-boundary contract in Phase 2 |
 
 ### Conversation State
@@ -1193,7 +1193,7 @@ Additional Phase 3+ directions:
 
 ## 11. Themis — Project Management Pod
 
-**Phase:** Entire section is **Phase 2**. Phase 1's single-project hardcoded configuration in Minos plus Iris's NL commissioning path cover the operator's immediate orchestration needs; Themis lands when the backlog grows past what a human can track in a chat thread and when multiple pod classes (Momus, Clio, Prometheus) need cross-pod coordination.
+**Phase:** Entire section is **Phase 2**. Phase 1's single-project hardcoded configuration in Minos plus Iris's NL commissioning path cover the operator's immediate orchestration needs; Themis lands when the backlog grows past what a human can track in a chat thread and when multiple pod classes (Momus, Calliope, Prometheus) need cross-pod coordination.
 
 ### Role
 
@@ -1242,7 +1242,7 @@ Argus is the detection layer. Themis is the policy layer. Minos is the actuator.
 
 ### Authority Model
 
-Themis commissions work and cancels runs autonomously — on operator hand-off from Iris, on scheduled rollups, and on Argus re-plan escalations. §6 MCP Broker Authentication states that commissions travel the *identity-capability* path rather than a pod-JWT scope; Themis fits that rule by having a **persisted system identity** in the Phase 2 identity registry rather than acting under a user-on-behalf-of token. The Themis identity uses the `system` role from §6 (baseline: `task.commission.*`, `task.direct`, `task.query_state`) and is provisioned at pod-deployment time rather than through `/pair`. Minos treats calls from the Themis pod the same way it treats calls from any other identity — authenticated, authorized per-capability, audited to Ariadne with the Themis identity as `origin.requester`.
+Themis commissions work and cancels runs autonomously — on operator hand-off from Iris, on scheduled rollups, and on Argus re-plan escalations. §6 MCP Broker Authentication states that commissions travel the *identity-capability* path rather than a pod-JWT scope; Themis fits that rule by having a **persisted system identity** in the Phase 2 identity registry rather than acting under a user-on-behalf-of token. The Themis identity uses the `system` role from §6 (baseline: `task.commission.*`, `task.direct`, `task.query_state`) and is provisioned at pod-deployment time rather than through `/pair`. Minos treats calls from the Themis pod the same way it treats calls from any other identity — authenticated, authorized per-capability, audited to Clio with the Themis identity as `origin.requester`.
 
 This keeps the `minos` broker scope table (§6) simple — no pod-JWT `minos.task.commission` scope is needed — while still giving Themis a real authority trail. A compromised Themis can only commission what its identity is authorized for; revoking the Themis identity in the registry is the emergency shutoff. Bootstrap mechanics, revocation semantics (including the deliberate absence of last-identity protection), and the `identity.*`-capability restriction for `system` identities are all specified in §6. The identity-tuple slot convention (what goes in `(surface, surface_id)` for non-human identities) and the re-plan-vs-escalate-to-human boundary are Phase 2 design work — see §23 Open Questions.
 
@@ -1304,22 +1304,22 @@ Local: `qwen2.5-coder:32b`. Escalation: Sonnet via Apollo. Opus is not expected;
 
 ---
 
-## 13. Clio — Documentation Pod
+## 13. Calliope — Documentation Pod
 
 **Phase:** Entire section is **Phase 2**.
 
 ### Role
 
-Clio generates and maintains documentation: READMEs, API docs, CHANGELOGs, and Architecture Decision Record drafts. It consumes commit history, Momus review output (as PRs land), and Hephaestus topology reports as primary inputs.
+Calliope generates and maintains documentation: READMEs, API docs, CHANGELOGs, and Architecture Decision Record drafts. It consumes commit history, Momus review output (as PRs land), and Hephaestus topology reports as primary inputs.
 
-Clio exists because documentation is consistently neglected in automated development pipelines. Without a dedicated pod, docs fall out of sync with code and become a human burden; Phase 1 accepts this because there are no Phase 1 pod classes capable of drift-inducing change. Phase 2 introduces Momus/Prometheus/Themis, each of which can land changes that break docs, so Clio becomes load-bearing when those pods are active.
+Calliope exists because documentation is consistently neglected in automated development pipelines. Without a dedicated pod, docs fall out of sync with code and become a human burden; Phase 1 accepts this because there are no Phase 1 pod classes capable of drift-inducing change. Phase 2 introduces Momus/Prometheus/Themis, each of which can land changes that break docs, so Calliope becomes load-bearing when those pods are active.
 
 ### Capabilities
 
-| Resource | Clio pod |
+| Resource | Calliope pod |
 |---|---|
 | Internet egress | None |
-| GitHub write | Branch push + PR open on `docs/**` paths only. Path scoping is enforced at the `github` MCP broker (not at the installation token, which GitHub scopes to a repo, not a path); a compromised Clio cannot bypass path restrictions because the broker refuses non-matching write calls. Never touches application code. |
+| GitHub write | Branch push + PR open on `docs/**` paths only. Path scoping is enforced at the `github` MCP broker (not at the installation token, which GitHub scopes to a repo, not a path); a compromised Calliope cannot bypass path restrictions because the broker refuses non-matching write calls. Never touches application code. |
 | Filesystem persistence | Ephemeral workspace |
 | MCP capabilities | GitHub (`repo.read`, `pr.create` scoped to `docs/**`), Mnemosyne (`memory.lookup` for prior doc decisions and project glossary), Thread sidecar (→ Hermes), Athena Ollama inference (direct HTTP, not MCP-scoped) for the local-model backend |
 | Invoked by | Themis on merged-PR events, scheduled rollup for changelog maintenance, direct operator commission for one-off doc work |
@@ -1328,16 +1328,16 @@ Clio exists because documentation is consistently neglected in automated develop
 
 Two modes:
 
-- **Reactive** — a PR merges; Themis commissions a Clio task to update affected READMEs, API docs, and the CHANGELOG. Clio opens a follow-up `docs/*` PR.
+- **Reactive** — a PR merges; Themis commissions a Calliope task to update affected READMEs, API docs, and the CHANGELOG. Calliope opens a follow-up `docs/*` PR.
 - **Rollup** — scheduled (e.g., weekly) pass to reconcile drift between code and docs, consolidate CHANGELOG entries, and flag doc-debt areas.
 
 ### Isolation
 
-Clio's GitHub scope is intentionally narrow: `docs/**` paths only. Path scoping is enforced at the `github` MCP broker at call time, not at the installation token (GitHub scopes tokens to repos, not paths); the broker refuses writes outside the declared path list regardless of the token's repo permissions. A compromised or injected Clio cannot modify application code or infra — the broker rejects non-matching writes, and doc PRs still go through human review on the same branch-protection path.
+Calliope's GitHub scope is intentionally narrow: `docs/**` paths only. Path scoping is enforced at the `github` MCP broker at call time, not at the installation token (GitHub scopes tokens to repos, not paths); the broker refuses writes outside the declared path list regardless of the token's repo permissions. A compromised or injected Calliope cannot modify application code or infra — the broker rejects non-matching writes, and doc PRs still go through human review on the same branch-protection path.
 
 ### Backend
 
-Local: `qwen3.5:27b`. Documentation is templated, pattern-based, and low reasoning-ceiling. No Apollo escalation tier in the default configuration. Exception: ADR drafts routed through Hephaestus use Hephaestus's Claude tier; Clio just formats and commits what Hephaestus produces.
+Local: `qwen3.5:27b`. Documentation is templated, pattern-based, and low reasoning-ceiling. No Apollo escalation tier in the default configuration. Exception: ADR drafts routed through Hephaestus use Hephaestus's Claude tier; Calliope just formats and commits what Hephaestus produces.
 
 ---
 
@@ -1364,7 +1364,7 @@ Prometheus owns release engineering: pipeline configuration, environment promoti
 ```
 Release trigger (merge to main, scheduled cut, operator request)
   → Themis commissions Prometheus with release scope
-  → Prometheus reads CHANGELOG (written by Clio), computes version bump
+  → Prometheus reads CHANGELOG (written by Calliope), computes version bump
   → Prometheus proposes pipeline changes if needed (`.github/workflows/**`)
   → Prometheus builds, publishes artifacts, tags the release
   → Prometheus promotes through environments per project policy (dev → staging → prod gated by human approval for high-blast scopes)
@@ -1455,13 +1455,13 @@ Projects declare a default size in the Minos project registry. Tasks can overrid
 
 Labyrinth is allocated 4 vCPU and 16GB RAM. At the stated requests, k3s admits up to 4 concurrent Daedalus pods, reserving approximately 2 vCPU and 8GB for system pods (coredns, traefik, local-path-provisioner, metrics-server, kubelet) and burst headroom. Sustained CPU across pods is dominated by idle LLM-wait, so aggregate usage rarely approaches aggregate limits. When no slot is available for an incoming task, Minos queues it rather than rejecting — see §6 Dispatch Queue. Awaiting-review tasks do not hold slots (they hibernate, §8), so the queue is dominated by actively-starting pods, not idle ones.
 
-Crete-level CPU budget: the i9-13900H provides 14 cores / 20 threads. Phase 1 Zakros assigns 10 vCPU across Minos, Postgres LXC, Labyrinth, and Ariadne, leaving substantial headroom. Co-resident workloads added later may oversubscribe the remaining thread budget at will — the Daedalus agent workload is idle-dominant and tolerates CPU contention well.
+Crete-level CPU budget: the i9-13900H provides 14 cores / 20 threads. Phase 1 Zakros assigns 10 vCPU across Minos, Postgres LXC, Labyrinth, and Clio, leaving substantial headroom. Co-resident workloads added later may oversubscribe the remaining thread budget at will — the Daedalus agent workload is idle-dominant and tolerates CPU contention well.
 
 ### Network Isolation
 
 **Phase:** Phase 1 ships with the default k3s CNI (flannel) and Proxmox-vNIC + Labyrinth-host-firewall layering only. NetworkPolicy-based per-pod-class enforcement and default-deny pod-to-pod are **Phase 3**, landing alongside Pythia/Talos/Minotaur/Typhon when multiple pod classes make the discriminator useful.
 
-Labyrinth pods may reach the following destinations and no others: Athena inference ports; GitHub over HTTPS; the Anthropic API over HTTPS (Phase 1 — claude-code pods call Anthropic directly; Phase 2 collapses this to "Apollo broker only" once Apollo lands and holds the credential); the Hermes broker on the Minos VM (for thread operations); the Minos state API and Argus ingest endpoint on the Minos VM; the Ariadne log ingest endpoint on the Ariadne VM.
+Labyrinth pods may reach the following destinations and no others: Athena inference ports; GitHub over HTTPS; the Anthropic API over HTTPS (Phase 1 — claude-code pods call Anthropic directly; Phase 2 collapses this to "Apollo broker only" once Apollo lands and holds the credential); the Hermes broker on the Minos VM (for thread operations); the Minos state API and Argus ingest endpoint on the Minos VM; the Clio log ingest endpoint on the Clio VM.
 
 Enforcement in Phase 1 is two layers:
 
@@ -1478,21 +1478,21 @@ Phase 3 adds a third layer:
 
 **Phase 3:** pod-to-pod traffic becomes **default-deny** under Calico — the first phase in which intra-VM pod-to-pod gets any enforcement at all. The broker-mediated coordination pattern (Daedalus → research broker → Pythia, never direct pod-to-pod) makes default-deny the natural fit — there is no legitimate cross-pod traffic flow in normal operation.
 
-NetworkPolicies are organized by pod class, selected via labels (`zakros.project/pod-class: daedalus | iris | themis | momus | clio | prometheus | hephaestus | pythia | talos | minotaur | typhon`):
+NetworkPolicies are organized by pod class, selected via labels (`zakros.project/pod-class: daedalus | iris | themis | momus | calliope | prometheus | hephaestus | pythia | talos | minotaur | typhon`):
 
 | Pod class | Egress allowed to |
 |---|---|
-| Daedalus | Minos VM (Hermes, Argus ingest, MCP brokers), Ariadne (log ingest), Athena (inference ports), external via Charon |
-| Iris | Minos VM (state API, Hermes), Ariadne (query), Athena (Ollama inference) |
-| Themis | Minos VM (task API, Mnemosyne, Argus ingest, Hermes via Iris fan-out), Ariadne, Athena (Ollama inference) |
-| Momus | Minos VM (GitHub broker, Apollo broker, Mnemosyne, Hermes, Argus ingest), Ariadne, Athena (Ollama inference for local triage tier); no direct external egress |
-| Clio | Minos VM (GitHub broker, Mnemosyne, Hermes, Argus ingest), Ariadne, Athena (Ollama inference); no direct external egress |
-| Prometheus | Minos VM (GitHub broker, Proxmox broker, Hermes, Argus ingest), Ariadne, Athena (Ollama inference), external artifact destinations via Charon |
-| Hephaestus | Minos VM (GitHub broker, Apollo broker, Mnemosyne, Hermes, Argus ingest), Ariadne; no direct external egress (Claude-tier inference goes through Apollo) |
-| Pythia | Minos VM (Argus ingest, research-broker response), Ariadne, Athena (inference only), external via Charon (broad allowlist with denylist + per-task domain narrowing) |
+| Daedalus | Minos VM (Hermes, Argus ingest, MCP brokers), Clio (log ingest), Athena (inference ports), external via Charon |
+| Iris | Minos VM (state API, Hermes), Clio (query), Athena (Ollama inference) |
+| Themis | Minos VM (task API, Mnemosyne, Argus ingest, Hermes via Iris fan-out), Clio, Athena (Ollama inference) |
+| Momus | Minos VM (GitHub broker, Apollo broker, Mnemosyne, Hermes, Argus ingest), Clio, Athena (Ollama inference for local triage tier); no direct external egress |
+| Calliope | Minos VM (GitHub broker, Mnemosyne, Hermes, Argus ingest), Clio, Athena (Ollama inference); no direct external egress |
+| Prometheus | Minos VM (GitHub broker, Proxmox broker, Hermes, Argus ingest), Clio, Athena (Ollama inference), external artifact destinations via Charon |
+| Hephaestus | Minos VM (GitHub broker, Apollo broker, Mnemosyne, Hermes, Argus ingest), Clio; no direct external egress (Claude-tier inference goes through Apollo) |
+| Pythia | Minos VM (Argus ingest, research-broker response), Clio, Athena (inference only), external via Charon (broad allowlist with denylist + per-task domain narrowing) |
 | Talos | Superset of Daedalus plus test-environment targets (Proxmox MCP for VM provisioning; test-environment IPs) |
-| Minotaur | Minos VM (Argus ingest), Ariadne; no external egress |
-| Typhon | Minos VM (Argus ingest), Ariadne; no external egress (internal-only for now; scope may expand when the chaos-target surface is defined) |
+| Minotaur | Minos VM (Argus ingest), Clio; no external egress |
+| Typhon | Minos VM (Argus ingest), Clio; no external egress (internal-only for now; scope may expand when the chaos-target surface is defined) |
 
 No pod class's default egress list includes another pod — all cross-pod coordination flows through brokers on the Minos VM, which already authenticate and authorize via the JWT + MCP broker pattern (Phase 2).
 
@@ -1509,13 +1509,13 @@ No pod class's default egress list includes another pod — all cross-pod coordi
 
 **Phase 1 — IP-range allowlist via Proxmox firewall.**
 
-Daedalus and Iris are the only pod classes in Phase 1. Their allowlist is narrow: GitHub, specific package registries, Athena (Ollama for Iris; inference as granted for Zakros), internal Crete services (Minos state API, Hermes, Ariadne). Pods do not need surface-API egress — Hermes on the Minos VM intermediates. Proxmox firewall enforces at IP/port granularity, using curated CIDR aliases:
+Daedalus and Iris are the only pod classes in Phase 1. Their allowlist is narrow: GitHub, specific package registries, Athena (Ollama for Iris; inference as granted for Zakros), internal Crete services (Minos state API, Hermes, Clio). Pods do not need surface-API egress — Hermes on the Minos VM intermediates. Proxmox firewall enforces at IP/port granularity, using curated CIDR aliases:
 
 - **GitHub IP ranges** fetched from `api.github.com/meta` and refreshed daily by a Minos-scheduled job; materialized as Proxmox firewall aliases (applies to both Labyrinth pods and the Minos VM)
 - **Package registry CIDRs** — published CDN ranges for Fastly (npm, PyPI), CloudFront (crates.io), Google (proxy.golang.org), etc.; refreshed weekly (applies to Labyrinth pods)
 - **Anthropic API** — `api.anthropic.com` and associated CDN ranges; applies to Labyrinth pods in Phase 1 because Daedalus pods invoke the `claude-code` binary which calls Anthropic directly. Apollo (Phase 2) moves this call to a broker-held credential and collapses the pod-side allowlist to "Apollo only" for external LLM traffic.
 - **Surface APIs** — CDN ranges for the configured Phase 1 Hermes surface; applies to the Minos VM for Hermes outbound
-- **Internal destinations** — Minos VM services, Athena, Ariadne — stable IPs on Crete
+- **Internal destinations** — Minos VM services, Athena, Clio — stable IPs on Crete
 
 Known Phase 1 limitation: hostname-layer differentiation (`api.github.com` vs `raw.githubusercontent.com` vs `gists.github.com`) is not achievable at the firewall layer — they share IP ranges. A compromised pod could exfiltrate via any GitHub-hosted surface. Accepted risk because the pod classes run trusted plugins (`claude-code`, Iris backed by Athena-local inference) on a single-operator deployment.
 
@@ -1530,7 +1530,7 @@ Architecture:
 - Pods receive `HTTP_PROXY` / `HTTPS_PROXY` env vars pointing to their class's Charon port
 - Proxmox firewall rules collapse to "Labyrinth → Charon only" for external egress; the broad CIDR allowlist moves inside Charon
 - Charon consults its per-class allowlist by SNI; allowed connections proxy straight through, denied connections are logged and refused
-- Every request logs to Ariadne with `(timestamp, pod-id, destination-SNI, bytes_out, bytes_in, outcome)`
+- Every request logs to Clio with `(timestamp, pod-id, destination-SNI, bytes_out, bytes_in, outcome)`
 
 Per-class allowlist examples:
 
@@ -1560,11 +1560,11 @@ Tasks that cannot cleanly hibernate within a drain grace period (e.g., mid-build
 
 ---
 
-## 17. Ariadne — Log Archive
+## 17. Clio — Log Archive
 
 ### Role
 
-Ariadne is the log collection and archive service. Where Argus decides — consuming structured events to determine warn / escalate / terminate — Ariadne remembers, storing the unstructured streams that let operators reconstruct what happened after the fact. Argus does not depend on Ariadne for live decisions; Ariadne is the forensic and debugging surface, not the control path.
+Clio is the log collection and archive service. Where Argus decides — consuming structured events to determine warn / escalate / terminate — Clio remembers, storing the unstructured streams that let operators reconstruct what happened after the fact. Argus does not depend on Clio for live decisions; Clio is the forensic and debugging surface, not the control path.
 
 ### Services
 
@@ -1573,7 +1573,7 @@ Ariadne is the log collection and archive service. Where Argus decides — consu
 | Vector | Log shipper and router — ingests from every Zakros source, normalizes, forwards to Loki |
 | Loki | Log store — indexed by label, compressed on disk, queryable via LogQL |
 
-### What Ariadne Ingests
+### What Clio Ingests
 
 - Container `stdout`/`stderr` from every pod in Labyrinth (agent output, build output, tool invocations)
 - k3s system logs (kubelet, CNI, control plane)
@@ -1583,11 +1583,11 @@ Ariadne is the log collection and archive service. Where Argus decides — consu
 
 ### Configuration
 
-Ariadne is a single-purpose VM. No agent processes run on it; no tasks are dispatched to it. The only inbound connections accepted are log ingest on Vector's ports and query access on Loki's port.
+Clio is a single-purpose VM. No agent processes run on it; no tasks are dispatched to it. The only inbound connections accepted are log ingest on Vector's ports and query access on Loki's port.
 
 ### Retention
 
-Retention policy is deferred — a concrete policy must be set before Ariadne is trusted as the durable audit surface. See Open Questions.
+Retention policy is deferred — a concrete policy must be set before Clio is trusted as the durable audit surface. See Open Questions.
 
 ---
 
@@ -1620,7 +1620,7 @@ Asclepius runs in a dedicated Proxmox LXC on Crete, independent of Minos VM. Thi
 - Disk usage on the DB volume
 - Query lag / unusual long-running queries
 
-**Ariadne VM:**
+**Clio VM:**
 
 - Vector shipper running; ingest rate sane
 - Loki accepting queries; disk usage on log volume
@@ -1637,7 +1637,7 @@ Asclepius runs in a dedicated Proxmox LXC on Crete, independent of Minos VM. Thi
 **Cross-component flows:**
 
 - Minos can reach Postgres
-- Pods can reach Hermes, Argus ingest, Ariadne ingest
+- Pods can reach Hermes, Argus ingest, Clio ingest
 - Hermes outbound to each surface API
 - Cerberus's ingress plugin upstream (Cloudflare Tunnel health, etc.)
 
@@ -1663,9 +1663,9 @@ Asclepius runs in a dedicated Proxmox LXC on Crete, independent of Minos VM. Thi
 
 - Systemd / launchctl restart for process-level failures
 - Proxmox VM/LXC restart via Proxmox MCP for guest-level failures
-- Automated capacity response (trigger Ariadne log pruning, Postgres vacuum, etc.)
+- Automated capacity response (trigger Clio log pruning, Postgres vacuum, etc.)
 
-All remediation actions flow through existing MCP brokers with the same JWT auth as any other action. Asclepius has its own Minos-minted JWT with scopes like `proxmox.vm.restart`, `hermes.notify.admin`, etc. Remediation is always logged to Ariadne and visible in task threads and admin channels.
+All remediation actions flow through existing MCP brokers with the same JWT auth as any other action. Asclepius has its own Minos-minted JWT with scopes like `proxmox.vm.restart`, `hermes.notify.admin`, etc. Remediation is always logged to Clio and visible in task threads and admin channels.
 
 ### Asclepius and Minos Cross-Monitoring
 
@@ -1698,7 +1698,7 @@ If Postgres itself is down, Asclepius operates in read-only mode from in-memory 
 
 ### Role
 
-Mnemosyne is the structured memory store. She receives the run record from every pod at teardown and serves context blobs back at pod spawn. Where Ariadne holds raw logs (grep-style forensics), Mnemosyne holds structured knowledge (semantic retrieval of what the project and its agents have learned). Agents query Mnemosyne through an MCP broker during runs; Minos writes to Mnemosyne on their behalf at teardown.
+Mnemosyne is the structured memory store. She receives the run record from every pod at teardown and serves context blobs back at pod spawn. Where Clio holds raw logs (grep-style forensics), Mnemosyne holds structured knowledge (semantic retrieval of what the project and its agents have learned). Agents query Mnemosyne through an MCP broker during runs; Minos writes to Mnemosyne on their behalf at teardown.
 
 Mnemosyne runs alongside Minos on the Minos VM, sharing the Postgres instance in the dedicated Postgres LXC with Minos core and Argus state. The service is a pluggable abstraction, so scaling the backend to a different database host or to Athena-hosted storage later is a configuration change rather than a redesign.
 
@@ -1744,7 +1744,7 @@ Argus or Minos signals termination
   → Mnemosyne persists the record; derived facts are extracted into the learned-facts index asynchronously
 ```
 
-If the plugin fails to produce a memory blob (hung agent, backend crash), Ariadne logs are the Phase 1 fallback — Minos reconstructs what it can and flags the failed extraction. Phase 3 adds the workspace volume snapshot as an additional fallback artifact.
+If the plugin fails to produce a memory blob (hung agent, backend crash), Clio logs are the Phase 1 fallback — Minos reconstructs what it can and flags the failed extraction. Phase 3 adds the workspace volume snapshot as an additional fallback artifact.
 
 ### Pod Spawn Flow
 
@@ -1804,7 +1804,7 @@ daedalus/
       discord/        # Discord Ed25519 (Phase 2)
   asclepius/
     core/             # Health monitor service
-    checks/           # Per-target check implementations (minos-service, postgres, ariadne, athena, flow)
+    checks/           # Per-target check implementations (minos-service, postgres, clio, athena, flow)
     remediation/      # Phase 3+ auto-remediation modules
   mcp-servers/
     thread/           # Pod-side thread sidecar (proxies to Hermes)
@@ -1872,7 +1872,7 @@ The following must be fully designed and implemented before Zakros Phase 1 can b
 - Dispatch queue defaults: per-priority-class depth limits
 - Recovery tuning: post-startup grace period length, webhook catch-up window (how far back Minos scans GitHub on restart), and orphan-pod policy beyond Phase 1's terminate-on-sight default
 - VLAN assignment for Crete on homelab 12-VLAN architecture
-- Ariadne retention policy: how long each log class is retained and whether tiered retention (hot/warm/archive) is warranted
+- Clio retention policy: how long each log class is retained and whether tiered retention (hot/warm/archive) is warranted
 
 **Phase 2+:**
 
@@ -1886,7 +1886,7 @@ The following must be fully designed and implemented before Zakros Phase 1 can b
 - Talos capability scope (Phase 3): whether Talos pods provision full test environments (VMs via Proxmox MCP) or only run test suites in containers; how test environment lifecycle relates to the originating Daedalus agent's PR
 - Dispatch queue (Phase 3): Pythia dispatch timeout default and per-class age-out policy for automated-trigger tasks that sit too long
 - Surface message replay on recovery (Phase 2+): per-surface inbound history fetch depth, timestamped replay format delivered to running pods, and the plugin-interface contract for how an agent reconciles replayed messages against in-progress work (re-plan vs. continue vs. `request_human_input`)
-- Budget defaults per Phase 2 task type (`review`, `docs`, `release`, `adr`): per-type `max_tokens`, `max_wall_clock_seconds`, and Argus warning/escalation thresholds. Review and docs are expected to be short and bounded; release and ADR drafts can run long. Defaults pending operational data from Momus/Clio/Prometheus/Hephaestus under real load.
+- Budget defaults per Phase 2 task type (`review`, `docs`, `release`, `adr`): per-type `max_tokens`, `max_wall_clock_seconds`, and Argus warning/escalation thresholds. Review and docs are expected to be short and bounded; release and ADR drafts can run long. Defaults pending operational data from Momus/Calliope/Prometheus/Hephaestus under real load.
 
 ---
 

@@ -54,7 +54,7 @@ func newTestServerWithMnemosyne(t *testing.T) (kit testServerKit, mnemo *mnemome
 			Communication: envelope.Communication{
 				HermesURL:        "http://x",
 				ArgusIngestURL:   "http://x",
-				AriadneIngestURL: "http://x",
+				ClioIngestURL: "http://x",
 			},
 			Capabilities: core.CapabilitiesDefaults{
 				InjectedCredentials: []envelope.InjectedCredential{

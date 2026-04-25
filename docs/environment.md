@@ -39,7 +39,7 @@ Specific hardware: Apple Mac Studio (part number Z1CD9LL/A), M4 Max SoC, 40-core
 What Zakros depends on:
 - An inference node reachable on specific ports (Ollama 11434, embedding 8400, Qdrant 6333, whisper on-demand).
 - The node does not host agents, workspaces, case data, or source code.
-- The node does not initiate connections to Crete-hosted resources except for one-way log shipping to Ariadne (the documented carveout; outbound to external model registries is also permitted).
+- The node does not initiate connections to Crete-hosted resources except for one-way log shipping to Clio (the documented carveout; outbound to external model registries is also permitted).
 
 macOS / launchd is the current implementation; the architectural contract is port-level service availability, not the OS.
 

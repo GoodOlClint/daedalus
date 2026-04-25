@@ -39,7 +39,7 @@ func sampleEnvelope(t *testing.T) *envelope.Envelope {
 		Communication: envelope.Communication{
 			HermesURL:        "http://minos/hermes",
 			ArgusIngestURL:   "http://minos/argus",
-			AriadneIngestURL: "http://ariadne/ingest",
+			ClioIngestURL: "http://clio/ingest",
 		},
 		Capabilities: envelope.Capabilities{
 			InjectedCredentials: []envelope.InjectedCredential{

@@ -22,7 +22,7 @@ locals {
       disk_size_gb = 200
       ip_offset    = 12
     }
-    ariadne = {
+    clio = {
       vm_id        = 213
       description  = "Log archive — Vector + Loki"
       cpu_cores    = 2

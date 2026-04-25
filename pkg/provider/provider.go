@@ -26,7 +26,7 @@ type Value struct {
 }
 
 // AuditEntry is a past-tense record of one provider operation — emitted to
-// Ariadne via pkg/audit so every credential touch is accountable.
+// Clio via pkg/audit so every credential touch is accountable.
 type AuditEntry struct {
 	At      time.Time
 	Op      string

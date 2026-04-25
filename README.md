@@ -73,8 +73,8 @@ Zakros runs on two physical hosts in this homelab. The architecture is not bound
 Worker pods execute LLM-driven code with network access and write privileges on a feature branch. The blast radius of a misbehaving or compromised pod has to terminate at a boundary the agent cannot cross — and shared infrastructure doesn't give you one.
 
 - **Hypervisor-level isolation between control plane and workers.** Minos (which holds credentials and dispatch authority) runs on a separate VM from Labyrinth (which runs the k3s cluster where pods execute). A pod escape stops at the Labyrinth VM boundary; it does not reach Minos's credential injection path or Postgres directly.
-- **Per-guest egress allowlist enforced by the Proxmox firewall.** Each VM has its own vNIC-level rules — Minos, Labyrinth, Postgres, and Ariadne each get only the egress they need. Self-contained on Crete; does not depend on the homelab edge firewall for Zakros isolation.
-- **Internal traffic never leaves the host.** Minos ↔ Labyrinth, Minos ↔ Postgres, Minos ↔ Ariadne all traverse Proxmox virtual bridges. There is no path for those flows to be observed or intercepted on the physical network.
+- **Per-guest egress allowlist enforced by the Proxmox firewall.** Each VM has its own vNIC-level rules — Minos, Labyrinth, Postgres, and Clio each get only the egress they need. Self-contained on Crete; does not depend on the homelab edge firewall for Zakros isolation.
+- **Internal traffic never leaves the host.** Minos ↔ Labyrinth, Minos ↔ Postgres, Minos ↔ Clio all traverse Proxmox virtual bridges. There is no path for those flows to be observed or intercepted on the physical network.
 - **Fast, local rollback.** Proxmox snapshots on a ZFS mirror let the operator revert a guest in seconds without coordinating with shared storage or other tenants.
 - **Capacity headroom that won't get reclaimed.** Phase 1 footprint is ~32 GB RAM / 10 vCPU; the box has substantial unused capacity reserved for Phase 2/3 growth (Apollo, Hecate, Charon, Asclepius) without contending with unrelated workloads.
 
@@ -118,7 +118,7 @@ Planned. Full slice decomposition in [`docs/phase-2-plan.md`](docs/phase-2-plan.
 - **Slices H1 ‖ H2 ‖ I** — Hecate credentials broker on OpenBao (H1), Apollo external-LLM broker with non-forgeable usage tracking (H2), Hermes subprocess extraction + multi-identity (webhook-based per-message `username`/avatar override) + Slack plugin (I)
 - **Slice K** — trust-boundary primitive in the worker plugin interface, high-blast confirmation tokens bound to operation content, Mnemosyne untrusted-source tagging preserved across context injection
 - **Slice L1** — Themis project-management pod; backlog decomposition and Argus escalation routing
-- **Slices L2–L5** — Momus (PR review), Clio (`docs/**` scoped), Prometheus (release, prod promotion gated on confirmation), Hephaestus (draft ADRs only)
+- **Slices L2–L5** — Momus (PR review), Calliope (`docs/**` scoped), Prometheus (release, prod promotion gated on confirmation), Hephaestus (draft ADRs only)
 - **Slice M** — break-glass session minting, minimal admin UI, Iris Phase 2 additions (pairing approval, delegated actions), Proxmox MCP broker + `infra` task type
 
 Teams plugin, Athena dev sandboxes, Pythia research pods, and Asclepius health monitoring are Phase 3.

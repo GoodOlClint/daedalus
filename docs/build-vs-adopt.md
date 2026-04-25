@@ -8,7 +8,7 @@
 
 Before Phase 1 implementation starts, every broker and infrastructure component in `architecture.md` is checked against existing open-source products and community MCP servers. Where an upstream fits the Zakros broker contract, adopt. Where the contract composes poorly with available options, write in-house with the survey as justification.
 
-Survey date: 2026-04-20. Every candidate scored against the broker contract: MCP protocol, per-call auth (Phase 1 bearer, Phase 2 Minos-minted Ed25519 JWT with `aud`/`exp`/`jti`/`mcp_scopes`), deny-by-default scope granularity, structured audit to Ariadne, subprocess isolation, permissive OSS license, <6-month maintenance signal. Gaps only — fits are not enumerated.
+Survey date: 2026-04-20. Every candidate scored against the broker contract: MCP protocol, per-call auth (Phase 1 bearer, Phase 2 Minos-minted Ed25519 JWT with `aud`/`exp`/`jti`/`mcp_scopes`), deny-by-default scope granularity, structured audit to Clio, subprocess isolation, permissive OSS license, <6-month maintenance signal. Gaps only — fits are not enumerated.
 
 Recurring pattern across the MCP ecosystem: candidates use one static env-var credential and expose all tools to whoever holds it. Per-operation scope enforcement derived from a caller's JWT is Zakros-broker territory; almost no upstream does it. The survey outcome is therefore overwhelmingly "wrap an upstream MCP behind a Zakros shim" rather than "adopt one wholesale."
 
@@ -80,7 +80,7 @@ Every surveyed server: one static credential, all tools exposed, stdout audit. `
 
 Candidates: `hashicorp/vault-mcp-server` (MIT, vendor-official), `@infisical/mcp`, 1Password community MCPs, community Vault MCPs, Keeper PAM MCP.
 
-- **vault-mcp-server** — Accepts `Authorization: Bearer` on HTTP but as a Vault-token passthrough (not a Minos JWT). Scope enforcement delegates to Vault policies attached to the token — **this is the only secret-class MCP in the survey where upstream auth composes with Zakros scopes**: one Vault policy per `credentials.fetch:<ref>`, Hecate mints short-lived policy-bound Vault tokens from JWT claims. Vault's own audit devices produce cleaner Ariadne-ingestible JSON than any MCP-layer log.
+- **vault-mcp-server** — Accepts `Authorization: Bearer` on HTTP but as a Vault-token passthrough (not a Minos JWT). Scope enforcement delegates to Vault policies attached to the token — **this is the only secret-class MCP in the survey where upstream auth composes with Zakros scopes**: one Vault policy per `credentials.fetch:<ref>`, Hecate mints short-lived policy-bound Vault tokens from JWT claims. Vault's own audit devices produce cleaner Clio-ingestible JSON than any MCP-layer log.
 - **Infisical MCP** — Universal-auth machine-identity creds, not per-call bearer. Inherits Infisical project/env RBAC but no MCP-layer per-op check.
 - **1Password MCPs** — Static Service Account token; 1P themselves warn "automation vaults only, avoid high-stakes secrets."
 
@@ -96,7 +96,7 @@ Candidates: `pab1it0/prometheus-mcp-server`, AWS Labs Prometheus MCP, `DavidFuch
 
 **Recommendation: write in-house, consume Prometheus + Uptime Kuma HTTP APIs directly.** No candidate covers all four scopes (`status`/`history`/`check.run`/`remediate`); retrofitting three MCPs with broker middleware costs more than native implementation.
 
-### ariadne
+### clio
 
 Candidates: `grafana/mcp-grafana` (Apache-2, vendor-official, LogQL + Prometheus + Pyroscope + multi-tenant `X-Scope-OrgID`), `grafana/loki-mcp`, `mo-silent/loki-mcp-server`, `elastic/mcp-server-elasticsearch`.
 
@@ -165,15 +165,15 @@ Candidates: CodeRabbit (proprietary SaaS), GitHub Copilot for PRs (proprietary, 
 
 **Recommendation: write in-house.** Two-stage local-triage + Apollo-escalation architecture is the load-bearing economic decision (60–70% Claude-call reduction); no surveyed candidate splits local/remote this way. Architectural-drift detection against in-repo ADRs is also a Zakros-specific surface — needs to read `docs/adr/accepted/` and flag divergence, which upstream reviewers don't model.
 
-### Documentation pods (vs §13 Clio)
+### Documentation pods (vs §13 Calliope)
 
 Candidates: Mintlify (SaaS, proprietary), docusaurus-based generators (framework, not generator), `TheodoreGalanos/SAID` (stale), `openai/swarm` doc examples, Doxygen / Sphinx / MkDocs (non-AI, format tools), `continuedev/autodev` (IDE-embedded, not headless).
 
 - **Mintlify** — SaaS; LLM-review tier hosted externally; no way to scope write path to `docs/**`. **Pass.**
-- **Sphinx / MkDocs / Doxygen** — Format tools, not generators. These are *dependencies* of a Clio implementation (the doc format target), not alternatives to it. **Keep as output-format references.**
+- **Sphinx / MkDocs / Doxygen** — Format tools, not generators. These are *dependencies* of a Calliope implementation (the doc format target), not alternatives to it. **Keep as output-format references.**
 - **continuedev/autodev** — IDE-embedded, not designed as a headless pod that opens PRs against a doc path. **Pass.**
 
-**Recommendation: write in-house.** Clio's contract — scheduled rollup, `docs/**`-only GitHub scope, Mnemosyne-informed project glossary — has no upstream match. The actual *doc content* work (README section generation, CHANGELOG formatting, API-doc scaffolding) is template-heavy and well-suited to the local `qwen3.5:27b` tier.
+**Recommendation: write in-house.** Calliope's contract — scheduled rollup, `docs/**`-only GitHub scope, Mnemosyne-informed project glossary — has no upstream match. The actual *doc content* work (README section generation, CHANGELOG formatting, API-doc scaffolding) is template-heavy and well-suited to the local `qwen3.5:27b` tier.
 
 ### DevOps / release pods (vs §14 Prometheus)
 
@@ -210,7 +210,7 @@ Candidates: `AgentGPT` / `AutoGPT` / `BabyAGI` (task-decomposition demos from 20
 
 1. **`github/github-mcp-server`** — Phase 1 GitHub broker. Only candidate covering PR/issue verbs; vendor-official, MIT, Jan 2026 active. PoC: shim that mints App installation tokens from JWT scopes and spawns the subprocess per session. Tests the generic "Zakros terminates JWT, wraps upstream MCP" pattern on the highest-traffic broker.
 2. **`hashicorp/vault-mcp-server` (+ OpenBao backend)** — Phase 2 Hecate. The only secret-class MCP whose upstream auth model (Vault policies) composes with Zakros scopes. Pair with OpenBao so the BSL governance risk of Vault OSS doesn't land on the critical path. PoC: one policy per `credentials.fetch:<ref>`, Hecate mints short-lived policy-bound tokens from JWT claims.
-3. **`grafana/mcp-grafana`** — Phase 1+ Ariadne queries. The only surveyed MCP with per-call bearer on HTTP and upstream scopes (datasource-scoped SA tokens) that meaningfully compose with the Zakros JWT/scope model. Handles Loki's `X-Scope-OrgID` multi-tenancy natively. Lowest-risk validation of the shim pattern.
+3. **`grafana/mcp-grafana`** — Phase 1+ Clio queries. The only surveyed MCP with per-call bearer on HTTP and upstream scopes (datasource-scoped SA tokens) that meaningfully compose with the Zakros JWT/scope model. Handles Loki's `X-Scope-OrgID` multi-tenancy natively. Lowest-risk validation of the shim pattern.
 
 Honorable mention: **Goose** as a second worker-backend plugin if the Phase 2 pluggable-worker-interface work wants a second real implementation beyond Claude Code — its MCP-native design is the one feature Zakros cannot cheaply replicate. Measure adapter size for envelope-to-recipe translation; under ~400 lines it beats writing a second plugin from scratch.
 
@@ -222,7 +222,7 @@ These came up while scoring candidates and were resolved with the operator on 20
 
 1. **Mnemosyne backend commitment.** *Resolved — single-Postgres stays.* Graphiti's temporal-KG shape is architecturally attractive for `learned_facts`, but adopting Neo4j/FalkorDB/Kuzu as a sidecar is a service-expansion decision. Any such expansion requires an explicit justification case (operational evidence that pgvector alone is inadequate) and lands no earlier than Phase 3.
 2. **Vault governance hedge.** *Resolved — OpenBao is the named Vault-compatible alternative.* The Vault OSS BSL 1.1 license is acceptable for homelab use but carries governance risk; OpenBao (MPL-2.0, LF-governed, IBM-backed, API-compatible with Vault 1.14) is the preferred backend if Hecate's PoC goes the Vault-API route. Documented in `environment.md §3`.
-3. **Ariadne scope granularity.** *Resolved — single `query` scope stays through Phase 2.* Per-datasource or per-log-class scope separation can be added in a later phase without structural change if operational need emerges. Grafana SA tokens can be narrowed when that time comes.
+3. **Clio scope granularity.** *Resolved — single `query` scope stays through Phase 2.* Per-datasource or per-log-class scope separation can be added in a later phase without structural change if operational need emerges. Grafana SA tokens can be narrowed when that time comes.
 4. **Asclepius history location.** *Resolved — Postgres is not exclusive for future service history.* Adding a second history store (Prometheus TSDB, or any other) is treated as a service-expansion decision requiring a justification case, Phase 3+. When Asclepius lands, the hybrid (metrics in Prometheus, transitions in `asclepius` Postgres schema) will need that justification written out, not assumed.
 5. **Research-broker scope granularity.** *Resolved — single `research.query` scope at Phase 3 landing.* Task envelope budget (`budget.max_tokens`, `max_wall_clock_seconds` in §8) is the containment mechanism for deep-research cost. A `research.deep` split is deferred pending operational evidence that deep-research is dramatically costlier than ordinary queries; premature split complicates the common case.
 

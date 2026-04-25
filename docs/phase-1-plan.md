@@ -142,7 +142,7 @@ terraform/
 | `minos` | VM | 2 | 8GB | 50GB | mgmt, services | Ubuntu 24.04 cloud image |
 | `postgres` | LXC | 2 | 4GB | 50GB | mgmt, services | Debian 12 template |
 | `labyrinth` | VM | 4 | 16GB | 200GB | mgmt, services | Ubuntu 24.04 cloud image; nested virt enabled |
-| `ariadne` | VM | 2 | 4GB | 100GB | mgmt, services | Ubuntu 24.04 cloud image |
+| `clio` | VM | 2 | 4GB | 100GB | mgmt, services | Ubuntu 24.04 cloud image |
 
 VLAN references live as variables so specific VLAN IDs can land without editing `vm-configs.tf`.
 
@@ -182,7 +182,7 @@ Slice A starts from this point.
 
 **Scope:** land the minimum code path that lets Minos commission a pod via CLI or HTTP and produce a pull request. No Discord, no hibernation, no Mnemosyne, no Argus enforcement.
 
-**Local dev substrates.** Code tasks 4–9 below have no VM dependency and develop entirely on the operator workstation. Infrastructure tasks 1–3 (Postgres, Vector+Loki, k3s) develop against local equivalents — Postgres in Docker, a local Vector+Loki stack in Docker, `k3d` or `kind` for Kubernetes. The real Postgres LXC / Ariadne VM / Labyrinth VM installs happen when Prerequisites (§3) is complete; the acceptance checkpoint runs against those. Until then, everything is a `make dev` away.
+**Local dev substrates.** Code tasks 4–9 below have no VM dependency and develop entirely on the operator workstation. Infrastructure tasks 1–3 (Postgres, Vector+Loki, k3s) develop against local equivalents — Postgres in Docker, a local Vector+Loki stack in Docker, `k3d` or `kind` for Kubernetes. The real Postgres LXC / Clio VM / Labyrinth VM installs happen when Prerequisites (§3) is complete; the acceptance checkpoint runs against those. Until then, everything is a `make dev` away.
 
 ### Tasks
 
@@ -192,10 +192,10 @@ Slice A starts from this point.
    - Install the pgvector extension (used in Slice C; install now so migrations are ordered correctly)
    - Migration tooling chosen (golang-migrate, goose, or atlas — decide at implementation); first migration lands the Slice A `tasks` table in the `minos` schema
 
-2. **Ariadne log stack install** (Ariadne VM)
+2. **Clio log stack install** (Clio VM)
    - Install Vector as the ingest shipper and Loki as the log store per `architecture.md §17`
-   - Configure Vector on each Zakros guest to forward stdout/journald to Ariadne's Loki
-   - Query-side work (Grafana, ariadne MCP) is deferred; Phase 1 debugging uses direct LogQL
+   - Configure Vector on each Zakros guest to forward stdout/journald to Clio's Loki
+   - Query-side work (Grafana, clio MCP) is deferred; Phase 1 debugging uses direct LogQL
 
 3. **k3s install** (Labyrinth VM)
    - Single-node k3s with default flannel CNI
@@ -243,7 +243,7 @@ Slice A starts from this point.
 - From Minos VM, run `minosctl commission ...` against a test repo
 - Pod spawns in Labyrinth, clones repo, opens a PR, exits cleanly
 - Task row transitions `queued → running → completed`
-- Logs visible in Ariadne (Loki query)
+- Logs visible in Clio (Loki query)
 
 ---
 
@@ -337,7 +337,7 @@ Landing D in parallel with B ensures every later slice runs under real guardrail
 
 - A test pod that sleeps past its wall-clock cap is terminated with a thread post
 - A test pod whose Argus sidecar is killed is detected as stalled and terminated
-- Termination event visible in Ariadne
+- Termination event visible in Clio
 
 ---
 
@@ -445,7 +445,7 @@ Landing D in parallel with B ensures every later slice runs under real guardrail
 ### Observability baseline
 
 - All services emit structured JSON logs to stdout (`pkg/audit`) picked up by Vector on each VM.
-- Vector ships to Loki on Ariadne; manual LogQL queries suffice for Phase 1 debugging. An Ariadne MCP query surface is a Phase 1+ stretch goal (candidate: `grafana/mcp-grafana` per `build-vs-adopt.md`).
+- Vector ships to Loki on Clio; manual LogQL queries suffice for Phase 1 debugging. An Clio MCP query surface is a Phase 1+ stretch goal (candidate: `grafana/mcp-grafana` per `build-vs-adopt.md`).
 
 ### CI
 

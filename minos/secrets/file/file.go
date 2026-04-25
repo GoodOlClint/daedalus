@@ -101,7 +101,7 @@ func (p *Provider) Revoke(_ context.Context, _ string) error {
 }
 
 // AuditList returns an empty slice — the file provider does not retain
-// operation history. Audit-grade retention is Ariadne's responsibility via
+// operation history. Audit-grade retention is Clio's responsibility via
 // pkg/audit.
 func (p *Provider) AuditList(_ context.Context, _ string) ([]provider.AuditEntry, error) {
 	return nil, nil

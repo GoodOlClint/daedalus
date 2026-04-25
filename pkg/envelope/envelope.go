@@ -87,7 +87,7 @@ type Communication struct {
 	ThreadRef        string `json:"thread_ref"`
 	HermesURL        string `json:"hermes_url"`
 	ArgusIngestURL   string `json:"argus_ingest_url"`
-	AriadneIngestURL string `json:"ariadne_ingest_url"`
+	ClioIngestURL string `json:"clio_ingest_url"`
 }
 
 // Capabilities gates what the pod can do: direct-inject credentials go to

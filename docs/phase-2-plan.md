@@ -8,7 +8,7 @@
 
 This document decomposes `roadmap.md §Phase 2` into an ordered, slice-based build plan. It is the authoritative sequencing document for Phase 2 implementation. When `roadmap.md` changes Phase 2 scope, this document is updated to match; when implementation diverges from this plan, update the plan rather than letting it rot.
 
-Phase 2 is the broker-extraction and hardening phase. Phase 1 shipped the minimum viable replacement for OpenClaw — one admin, one project, one surface, one worker pod class. Phase 2 introduces the broker fleet (Apollo, Hecate, extracted Hermes/Argus), the pod-class expansion (Themis, Momus, Clio, Prometheus, Hephaestus), and the security controls Phase 1 deferred (Ed25519 JWTs, identity registry with pairing, trust-boundary contract, high-blast confirmation tokens, Mnemosyne untrusted-source tagging).
+Phase 2 is the broker-extraction and hardening phase. Phase 1 shipped the minimum viable replacement for OpenClaw — one admin, one project, one surface, one worker pod class. Phase 2 introduces the broker fleet (Apollo, Hecate, extracted Hermes/Argus), the pod-class expansion (Themis, Momus, Calliope, Prometheus, Hephaestus), and the security controls Phase 1 deferred (Ed25519 JWTs, identity registry with pairing, trust-boundary contract, high-blast confirmation tokens, Mnemosyne untrusted-source tagging).
 
 The planning method is the same as Phase 1: slice-by-acceptance. Each slice closes at least one bullet of the Phase 2 acceptance gate, and no slice lands without its acceptance checkpoint passing on the real Crete deployment.
 
@@ -25,7 +25,7 @@ From `roadmap.md §Phase 2 acceptance`:
 5. Momus reviews every Zakros-opened PR before it reaches the human reviewer, with review comments posted to the PR.
 6. Themis decomposes a multi-task operator request from Iris into an ordered plan, commissions each task through Minos, and reports progress back through Iris.
 7. An Argus escalation reaches Themis, is classified (halt / re-plan / escalate-to-human), and the corresponding Minos action fires without operator intervention for the re-plan case.
-8. Clio opens a `docs/**` PR after a feature PR merges; Hephaestus opens a draft ADR in `docs/adr/proposed/**` without ever writing to `docs/adr/accepted/**`; Prometheus cuts a release and is blocked on production promotion pending the operator's confirmation token.
+8. Calliope opens a `docs/**` PR after a feature PR merges; Hephaestus opens a draft ADR in `docs/adr/proposed/**` without ever writing to `docs/adr/accepted/**`; Prometheus cuts a release and is blocked on production promotion pending the operator's confirmation token.
 
 Every slice below closes one or more of these bullets, plus — as Slice 0 — the Phase 1 Iris acceptance bullet that slipped.
 
@@ -103,7 +103,7 @@ Per `memory/hermes_identity_abstraction.md`, the Phase 1 Discord bot (registered
 - **H1** (Hecate), **H2** (Apollo), and **I** (Hermes extraction + multi-identity + Slack) are parallel — three non-overlapping subsystems.
 - **K** (trust boundary + confirmation tokens + Mnemosyne untrusted-source tagging) depends on the broker fleet (H1+H2+J) being live.
 - **L1** (Themis) depends on K for the confirmation-token primitive and the identity registry having `system` identities.
-- **L2–L5** (Momus, Clio, Prometheus, Hephaestus) are parallel after L1 — they all commission through Themis and depend on the confirmation-token primitive.
+- **L2–L5** (Momus, Calliope, Prometheus, Hephaestus) are parallel after L1 — they all commission through Themis and depend on the confirmation-token primitive.
 - **M** (break-glass + admin UI + Iris Phase 2 + Proxmox + infra tasks) is the final slice; gates on L so Iris's Phase 2 additions can delegate to any pod class.
 
 ---
@@ -197,7 +197,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
 2. **Broker middleware library (`pkg/brokerauth`).**
    - Signature verification, `aud` check, `exp` check, `jti` replay tracking, `mcp_scopes[broker]` lookup
    - 403 with structured error naming the failing check
-   - Audit emit on every call (allowed and denied) to the Ariadne path
+   - Audit emit on every call (allowed and denied) to the Clio path
 
 3. **Minos signing-key rotation.**
    - Rotation primitive: generate new keypair, distribute public key, retire old on drain
@@ -222,7 +222,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
 
 - A pod commissioned through the CLI receives a JWT and uses it for every MCP call
 - GitHub operations work end-to-end through the shim (clone, PR create, PR comment)
-- A pod attempting a scope it was not granted receives 403 and the denial is visible in Ariadne
+- A pod attempting a scope it was not granted receives 403 and the denial is visible in Clio
 - Signing-key rotation invalidates outstanding tokens without restarting brokers
 - The PAT has been removed from the secrets backend; nothing in the system references it
 
@@ -280,7 +280,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
    - Subprocess-per-plugin supervisor used by Apollo (H2) and Hermes (I)
    - Health check, SIGHUP rotation, crash recovery with backoff
    - Per-subprocess credential injection at startup (Minos → subprocess via RPC in Phase 2 Hecate-adoption — H1 updates this to pull)
-   - Structured stdout/stderr capture piped to Vector → Ariadne
+   - Structured stdout/stderr capture piped to Vector → Clio
 
 8. **Identity-gated command intake.**
    - Every Hermes-delivered command checks `(surface, surface_id)` against the identity registry
@@ -325,7 +325,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
    - `POST /argus/events` endpoint, JWT-verified (`aud` includes `argus`)
    - Brokers push scope-deny events, high-blast-denial events, and broker-audit events via this endpoint
    - Rules engine grows a "repeated denials from the same pod" pattern → escalation → termination (per `architecture.md §6 MCP Broker Authentication` Audit)
-   - Audit to Ariadne on every event received
+   - Audit to Clio on every event received
 
 3. **Startup reconciliation for extracted Argus.**
    - Grace period on restart per `architecture.md §7 State Persistence and Recovery`
@@ -371,7 +371,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
    - New `cmd/hecate` binary, own systemd unit on the Minos VM
    - Spawns `hashicorp/vault-mcp-server` as a supervised subprocess using `pkg/supervisor` from Slice G
    - Hecate sits between pods/subprocesses and the MCP server; validates caller JWT (`aud` includes `hecate`), maps `credentials.fetch:<ref>` scopes to Vault policies, mints short-lived Vault policy-bound tokens, proxies fetches through the upstream MCP server
-   - Audit to Ariadne on every fetch (allowed and denied)
+   - Audit to Clio on every fetch (allowed and denied)
 
 3. **Secret provider abstraction update.**
    - `pkg/provider` grows a `hecate` implementation that resolves credentials via Hecate MCP calls
@@ -396,7 +396,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
 ### Acceptance checkpoint for Slice H1
 
 - A long-running pod crosses the 1-hour GitHub installation token TTL without task failure (refresh is transparent)
-- A pod's JWT with only `credentials.fetch:claude-code-token` can fetch the Claude credential but cannot fetch the GitHub App private key (policy denial visible in Ariadne)
+- A pod's JWT with only `credentials.fetch:claude-code-token` can fetch the Claude credential but cannot fetch the GitHub App private key (policy denial visible in Clio)
 - Minos restart does not disrupt in-flight pods' credential-holding (Hecate is the source of truth)
 - OpenBao unseal survives LXC reboot (auto-unseal via Transit seal against a file-backed Transit — optional; manual unseal is also acceptable for Phase 2 given single-operator homelab posture)
 
@@ -620,7 +620,7 @@ Phase 1 acceptance is now fully closed, with the backend-is-Claude interim expli
 
 ---
 
-## 13. Slices L2–L5 — "Momus, Clio, Prometheus, Hephaestus" *(parallel, after L1)*
+## 13. Slices L2–L5 — "Momus, Calliope, Prometheus, Hephaestus" *(parallel, after L1)*
 
 **Proves:** pod-class expansion that turns Zakros from "one agent per task" into "coordinated team." All four pod classes commission through Themis (or directly through Minos for scheduled/triggered flows) and run under Phase 2's trust-boundary + confirmation-token infrastructure.
 
@@ -638,17 +638,17 @@ These are parallel because they touch non-overlapping pod images, MCP scopes, an
 
 **Acceptance:** Momus reviews every Zakros-opened PR before the human reviewer sees it; review comments post to the PR; local tier's findings and escalated tier's findings are distinguishable in the comment source; `roadmap.md §Phase 2 acceptance` bullet 5 passes.
 
-### Slice L3 — Clio (documentation)
+### Slice L3 — Calliope (documentation)
 
 **Scope:**
-- Pod image under `agents/clio/`, both reactive (per merged PR) and scheduled (rollup) lifecycle
+- Pod image under `agents/calliope/`, both reactive (per merged PR) and scheduled (rollup) lifecycle
 - `github.push:docs/**` and `github.pr.create:docs/**` path-scoped at the github shim (Slice F) — enforced at the broker, not the installation token
 - Inputs: merged PR content, Momus review output, Mnemosyne project context
 - Backend: qwen3.5:27b for template-heavy README/CHANGELOG/API-doc work
 - New task type: `docs`; new capability: `task.commission.docs`
 - Scheduled rollup: weekly sweep against drift between `docs/**` and code state
 
-**Acceptance:** after a feature PR merges, Clio opens a `docs/**` PR updating the relevant README/CHANGELOG; Clio attempts to push outside `docs/**` and is refused at the github shim with a path-scope denial in Ariadne; `roadmap.md §Phase 2 acceptance` bullet 8 partial (docs portion) passes.
+**Acceptance:** after a feature PR merges, Calliope opens a `docs/**` PR updating the relevant README/CHANGELOG; Calliope attempts to push outside `docs/**` and is refused at the github shim with a path-scope denial in Clio; `roadmap.md §Phase 2 acceptance` bullet 8 partial (docs portion) passes.
 
 ### Slice L4 — Prometheus (DevOps / release)
 
@@ -689,7 +689,7 @@ These are parallel because they touch non-overlapping pod images, MCP scopes, an
    - `observe` default in admin role; `shell` admin-only (explicit per-identity grant to non-admins)
    - Flow: `/minos break-glass <task_id> [observe|shell] [reason]` via any Hermes surface → Minos validates capability → mints short-lived k3s ServiceAccount token bound to a ClusterRole matching the level → returns kubectl config to operator DM
    - Default session TTL 30 minutes; extension requires fresh approval
-   - k3s audit log captures every API call and ships to Ariadne
+   - k3s audit log captures every API call and ships to Clio
 
 2. **Admin web UI (minimal).**
    - Served by Minos on an HTTP endpoint behind Cerberus's Cloudflare Tunnel ingress
@@ -718,7 +718,7 @@ These are parallel because they touch non-overlapping pod images, MCP scopes, an
 
 ### Acceptance checkpoint for Slice M
 
-- Operator requests `/minos break-glass <task_id> observe` via Discord; Minos mints a session; operator uses `kubectl logs` on the target pod; k3s audit log shows every API call in Ariadne
+- Operator requests `/minos break-glass <task_id> observe` via Discord; Minos mints a session; operator uses `kubectl logs` on the target pod; k3s audit log shows every API call in Clio
 - Admin UI exposes the identity registry; approving a pending pairing through the UI has the same effect as approving via chat
 - Iris commands an observe-level break-glass session for a requester with `break_glass.observe` capability; refused for a requester without
 - A commissioned `infra` task dispatches a pod with Proxmox MCP scope; the pod calls `vm.status` successfully; an attempt at `vm.destroy` blocks on `confirmation_required`
@@ -744,13 +744,13 @@ These are parallel because they touch non-overlapping pod images, MCP scopes, an
 ### Observability baseline
 
 - All Phase 2 services emit structured JSON logs to stdout (`pkg/audit`) picked up by Vector on each VM
-- Every JWT call (allowed or denied) lands in Ariadne with the full broker-auth tuple
-- Every identity-registry transition (pairing, approval, revocation, commission) lands in Ariadne with `origin.requester_role`
-- Ariadne query surface via `grafana/mcp-grafana` shim per `build-vs-adopt.md §ariadne` is a Phase 2 stretch goal — helpful for debugging Phase 2 but not a slice blocker
+- Every JWT call (allowed or denied) lands in Clio with the full broker-auth tuple
+- Every identity-registry transition (pairing, approval, revocation, commission) lands in Clio with `origin.requester_role`
+- Clio query surface via `grafana/mcp-grafana` shim per `build-vs-adopt.md §clio` is a Phase 2 stretch goal — helpful for debugging Phase 2 but not a slice blocker
 
 ### CI
 
-- Phase 1 workflow (`go vet`, `go test ./...`, `golangci-lint`, `go build ./...`, per-module Dockerfile builds) extends to cover new cmd/ binaries (`cmd/argus`, `cmd/hecate`, `cmd/apollo`) and new agent images (Themis, Momus, Clio, Prometheus, Hephaestus)
+- Phase 1 workflow (`go vet`, `go test ./...`, `golangci-lint`, `go build ./...`, per-module Dockerfile builds) extends to cover new cmd/ binaries (`cmd/argus`, `cmd/hecate`, `cmd/apollo`) and new agent images (Themis, Momus, Calliope, Prometheus, Hephaestus)
 - Slack verifier plugin contract gains a fixture-based test suite
 - JWT middleware gains a property-based test suite covering claim parsing, scope matching, signature verification
 

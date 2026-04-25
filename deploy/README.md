@@ -5,7 +5,7 @@ provisioned them on Crete. All scripts are idempotent — safe to re-run
 after fixing config or adjusting env.
 
 Assumes the flat-VLAN topology (VLAN 140, 172.16.140.0/24, DHCP). Current
-IPs: postgres .100, minos .101, labyrinth .102, ariadne .103.
+IPs: postgres .100, minos .101, labyrinth .102, clio .103.
 
 ## Teardown and rebuild from scratch
 

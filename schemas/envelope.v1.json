@@ -75,7 +75,7 @@
         "thread_ref",
         "hermes_url",
         "argus_ingest_url",
-        "ariadne_ingest_url"
+        "clio_ingest_url"
       ],
       "additionalProperties": false,
       "properties": {
@@ -83,7 +83,7 @@
         "thread_ref": { "type": "string" },
         "hermes_url": { "type": "string", "format": "uri" },
         "argus_ingest_url": { "type": "string", "format": "uri" },
-        "ariadne_ingest_url": { "type": "string", "format": "uri" }
+        "clio_ingest_url": { "type": "string", "format": "uri" }
       }
     },
 
