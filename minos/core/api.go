@@ -17,7 +17,7 @@ import (
 	mnemocore "github.com/zakros-hq/zakros/mnemosyne/core"
 	"github.com/zakros-hq/zakros/minos/storage"
 	"github.com/zakros-hq/zakros/pkg/audit"
-	"github.com/zakros-hq/zakros/pkg/jwt"
+	"github.com/zakros-hq/zakros/pkg/brokerauth"
 )
 
 // routes builds the HTTP handler for Minos's API.
@@ -31,23 +31,24 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("POST /tasks/{id}/heartbeat", s.requirePodAuth(http.HandlerFunc(s.handleHeartbeat)))
 	mux.Handle("POST /tasks/{id}/memory", s.requirePodAuth(http.HandlerFunc(s.handleReportMemory)))
 	mux.Handle("POST /tasks/{id}/post", s.requirePodAuth(http.HandlerFunc(s.handleReportPost)))
-	// State API — read-only, gated by the Iris bearer. Iris (and any
-	// future read-only consumer) uses this surface to answer "what's
-	// running?"-style questions. Phase 2 Slice F replaces the bearer
-	// check with a JWT carrying the `minos.query_state` scope.
-	mux.Handle("GET /state/tasks", s.requireIrisAuth(http.HandlerFunc(s.handleStateTasks)))
-	mux.Handle("GET /state/queue", s.requireIrisAuth(http.HandlerFunc(s.handleStateQueue)))
-	mux.Handle("GET /state/recent", s.requireIrisAuth(http.HandlerFunc(s.handleStateRecent)))
+	// State API — read-only, gated by JWT with audience=minos and
+	// scope=query_state. Iris (and any future read-only consumer) uses
+	// this surface to answer "what's running?"-style questions.
+	mux.Handle("GET /state/tasks", s.minosVerifier.Require("query_state", http.HandlerFunc(s.handleStateTasks)))
+	mux.Handle("GET /state/queue", s.minosVerifier.Require("query_state", http.HandlerFunc(s.handleStateQueue)))
+	mux.Handle("GET /state/recent", s.minosVerifier.Require("query_state", http.HandlerFunc(s.handleStateRecent)))
 	// Hermes pull endpoints — Iris's read/write surface to the
 	// communication broker without needing a direct Plugin reference.
-	// Phase 2 Slice F replaces the bearer with a JWT carrying
-	// `hermes.events.next` and `hermes.post_as_iris` scopes.
-	mux.Handle("GET /hermes/events.next", s.requireIrisAuth(http.HandlerFunc(s.handleHermesEventsNext)))
-	mux.Handle("POST /hermes/post_as_iris", s.requireIrisAuth(http.HandlerFunc(s.handleHermesPostAsIris)))
-	// Mnemosyne lookup — Phase 1 posture wraps the in-process Store. Phase
-	// 2 Slice F replaces the bearer with a JWT carrying
-	// `mnemosyne.memory.lookup` scope; pgvector semantic query lands then.
-	mux.Handle("POST /memory/lookup", s.requireIrisAuth(http.HandlerFunc(s.handleMemoryLookup)))
+	// Audience=hermes, scope per route.
+	mux.Handle("GET /hermes/events.next", s.hermesVerifier.Require("events.next", http.HandlerFunc(s.handleHermesEventsNext)))
+	mux.Handle("POST /hermes/post_as_iris", s.hermesVerifier.Require("post_as_iris", http.HandlerFunc(s.handleHermesPostAsIris)))
+	// Mnemosyne lookup — Phase 1 posture wraps the in-process Store;
+	// pgvector semantic query lands in Phase 2 K. Audience=mnemosyne.
+	mux.Handle("POST /memory/lookup", s.mnemosyneVerifier.Require("memory.lookup", http.HandlerFunc(s.handleMemoryLookup)))
+	// Admin endpoint to mint Iris's long-lived JWT. Operator runs
+	// `minosctl mint-iris-token` once, pastes into deploy/secrets.json
+	// under minos/iris-token, then re-runs deploy/iris-install.sh.
+	mux.Handle("POST /admin/iris/mint-token", s.requireAdmin(http.HandlerFunc(s.handleMintIrisToken)))
 	mux.HandleFunc("POST /webhooks/github", s.handleGithubWebhook)
 	return s.auditMiddleware(mux)
 }
@@ -70,26 +71,13 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 }
 
 // requirePodAuth gates pod-callback endpoints behind the pod's Minos-minted
-// bearer token (composed by Commission into envelope.Capabilities.McpAuthToken).
-// The token's subject is "task:<task_id>" and must match the {id} path value,
-// so a compromised pod cannot report against another task.
+// JWT (composed by Commission into envelope.Capabilities.McpAuthToken).
+// brokerauth.Verifier handles the cryptographic checks (signature, audience,
+// expiry); this wrapper layers the task-id-matches-path check on top so a
+// compromised pod cannot report against another task.
 func (s *Server) requirePodAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if bearer == "" || bearer == r.Header.Get("Authorization") {
-			writeError(w, http.StatusUnauthorized, "missing or malformed bearer")
-			return
-		}
-		secret, err := s.provider.Resolve(r.Context(), s.cfg.BearerSecretRef)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "resolve bearer secret")
-			return
-		}
-		claims, err := jwt.VerifyBearer(secret.Data, bearer)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "invalid bearer")
-			return
-		}
+	verified := s.minosVerifier.Require("task.lifecycle", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims := brokerauth.ClaimsFromContext(r.Context())
 		const prefix = "task:"
 		if !strings.HasPrefix(claims.Subject, prefix) {
 			writeError(w, http.StatusUnauthorized, "subject not task-scoped")
@@ -101,7 +89,8 @@ func (s *Server) requirePodAuth(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
-	})
+	}))
+	return verified
 }
 
 // requireAdmin gates operator-only endpoints behind a bearer token resolved

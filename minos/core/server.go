@@ -6,6 +6,7 @@ package core
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 	"github.com/zakros-hq/zakros/minos/dispatch"
 	"github.com/zakros-hq/zakros/minos/storage"
 	"github.com/zakros-hq/zakros/pkg/audit"
+	"github.com/zakros-hq/zakros/pkg/brokerauth"
+	"github.com/zakros-hq/zakros/pkg/jwt"
 	"github.com/zakros-hq/zakros/pkg/provider"
 )
 
@@ -34,6 +37,21 @@ type Server struct {
 	mnemosyne   mnemocore.Store
 	namespace   string
 	now         func() time.Time
+
+	// signingKey is the Ed25519 private key Minos uses to mint pod
+	// JWTs. Loaded once at construction from cfg.SigningKeyRef and
+	// held in-process so commissions don't pay the resolve+parse cost
+	// per call. Public key is derived from this for in-process broker
+	// verification.
+	signingKey ed25519.PrivateKey
+	// One Verifier per broker name Minos hosts in-process. Each gates
+	// the routes whose architecture.md §6 broker mapping points here:
+	//   minosVerifier     — pod lifecycle callbacks + state queries
+	//   hermesVerifier    — Iris's events.next / post_as_iris pull surface
+	//   mnemosyneVerifier — memory.lookup
+	minosVerifier     *brokerauth.Verifier
+	hermesVerifier    *brokerauth.Verifier
+	mnemosyneVerifier *brokerauth.Verifier
 }
 
 // Option configures a Server at construction time.
@@ -109,16 +127,47 @@ func New(cfg Config, p provider.Provider, store storage.Store, d dispatch.Dispat
 	for _, o := range opts {
 		o(s)
 	}
+
+	// Resolve + parse the Ed25519 signing key once at construction so
+	// every commission and verifier check shares the parsed object.
+	keyVal, err := p.Resolve(context.Background(), cfg.SigningKeyRef)
+	if err != nil {
+		return nil, fmt.Errorf("minos/core: resolve signing key %s: %w", cfg.SigningKeyRef, err)
+	}
+	priv, err := jwt.ParsePrivateKey(keyVal.Data)
+	if err != nil {
+		return nil, fmt.Errorf("minos/core: parse signing key: %w", err)
+	}
+	s.signingKey = priv
+
+	// Build the in-process broker verifiers. Same signing key, distinct
+	// per-broker audiences. Replay tracking is opt-out for these
+	// endpoints because the handlers themselves are idempotent (pod
+	// callbacks update task state by id; state queries are read-only;
+	// pull/post are designed for repeated polling).
+	pub, ok := priv.Public().(ed25519.PublicKey)
+	if !ok {
+		return nil, errors.New("minos/core: derived public key is not ed25519")
+	}
+	mkVerifier := func(broker string) *brokerauth.Verifier {
+		return &brokerauth.Verifier{
+			Broker:    broker,
+			PublicKey: pub,
+			Replay:    brokerauth.NopReplayStore{},
+			Audit:     em,
+		}
+	}
+	s.minosVerifier = mkVerifier("minos")
+	s.hermesVerifier = mkVerifier("hermes")
+	s.mnemosyneVerifier = mkVerifier("mnemosyne")
+
 	if s.hermes != nil {
 		s.hermes.Subscribe(s.handleInbound)
-		// Wire the Iris pull consumer when Iris is configured. Without
-		// this registration, /hermes/events.next 503s — operators who
-		// haven't installed Iris just don't set IrisTokenRef and the
-		// Iris-facing routes refuse on the auth check first anyway.
-		if s.cfg.IrisTokenRef != "" {
-			if err := s.hermes.RegisterPullConsumer(IrisPullConsumer, irisPullCapacity, IrisPullFilter); err != nil {
-				return nil, fmt.Errorf("minos/core: register iris pull consumer: %w", err)
-			}
+		// Always register the Iris pull consumer — JWT scope on the
+		// /hermes/events.next route is the access control. The buffer
+		// is harmless when no Iris pod is reading.
+		if err := s.hermes.RegisterPullConsumer(IrisPullConsumer, irisPullCapacity, IrisPullFilter); err != nil {
+			return nil, fmt.Errorf("minos/core: register iris pull consumer: %w", err)
 		}
 	}
 	return s, nil

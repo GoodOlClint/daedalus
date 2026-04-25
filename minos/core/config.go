@@ -16,20 +16,22 @@ import (
 type Config struct {
 	ListenAddr             string        `json:"listen_addr"`
 	DatabaseURL            string        `json:"database_url"`
-	BearerSecretRef        string        `json:"bearer_secret_ref"`
+	// SigningKeyRef is the secret-provider reference whose value is
+	// Minos's Ed25519 private key (PEM-encoded PKCS#8). Minos signs
+	// every pod JWT with it; brokers verify using the matching public
+	// key. Generate with `minosctl gen-signing-key`.
+	SigningKeyRef          string        `json:"signing_key_ref"`
 	AdminTokenRef          string        `json:"admin_token_ref"`
-	// IrisTokenRef is the secret-provider reference whose value gates the
-	// Minos state API (`/state/*`) and Hermes pull endpoints
-	// (`/hermes/events.next`, `/hermes/post_as_iris`). The Iris pod holds
-	// this token and presents it as a bearer. Optional: when empty, the
-	// Iris-facing routes return 503 — useful for deployments that haven't
-	// installed the Iris pod yet.
-	IrisTokenRef           string        `json:"iris_token_ref"`
 	GithubWebhookSecretRef string        `json:"github_webhook_secret_ref"`
 	// MinosPodURL is the Minos API URL as seen from inside a Labyrinth
 	// pod. Injected into the pod as ZAKROS_MINOS_URL so the entrypoint
 	// can POST /tasks/{id}/pr after opening the PR.
 	MinosPodURL string        `json:"minos_pod_url"`
+	// GitHubBrokerPodURL is the github-broker URL as seen from inside a
+	// Labyrinth pod. Injected as ZAKROS_GITHUB_BROKER_URL so the
+	// entrypoint can mint a per-task installation token. Slice F
+	// default: same VM as Minos, port 8082.
+	GitHubBrokerPodURL string `json:"github_broker_pod_url"`
 	Admin       AdminIdentity `json:"admin"`
 	Project     ProjectConfig `json:"project"`
 	// Discord holds credentials for the Phase 1 Discord Hermes plugin.
@@ -124,8 +126,8 @@ func validateConfig(c *Config) error {
 	if c.ListenAddr == "" {
 		return fmt.Errorf("listen_addr required")
 	}
-	if c.BearerSecretRef == "" {
-		return fmt.Errorf("bearer_secret_ref required")
+	if c.SigningKeyRef == "" {
+		return fmt.Errorf("signing_key_ref required")
 	}
 	if c.AdminTokenRef == "" {
 		return fmt.Errorf("admin_token_ref required")

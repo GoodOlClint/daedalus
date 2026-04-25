@@ -1,0 +1,22 @@
+[Unit]
+Description=Zakros github-broker (JWT-gated GitHub App installation-token mint)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zakros
+Group=zakros
+ExecStart=/usr/local/bin/github-broker \
+  -config /etc/zakros/github-broker.json
+Restart=on-failure
+RestartSec=5s
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -25,20 +25,18 @@ import (
 // wired in so context injection + memory persistence are exercised.
 func newTestServerWithMnemosyne(t *testing.T) (kit testServerKit, mnemo *mnemomem.Store) {
 	t.Helper()
-	bearerSecret := []byte("bearer-secret-for-tests")
+	signingPrivPEM, signingPub, signingPriv := freshSigningKeypair(t)
 	webhookSecret := []byte("webhook-secret-for-tests")
 	prov := &staticProvider{refs: map[string][]byte{
-		"minos-bearer-secret":   bearerSecret,
+		"minos-signing-key":     signingPrivPEM,
 		"minos-admin-token":     []byte("admin-token"),
-		"minos-iris-token":      []byte("iris-token"),
 		"github-app-token":      []byte("ghs_injected"),
 		"github-webhook-secret": webhookSecret,
 	}}
 	cfg := core.Config{
 		ListenAddr:             ":0",
-		BearerSecretRef:        "minos-bearer-secret",
+		SigningKeyRef:          "minos-signing-key",
 		AdminTokenRef:          "minos-admin-token",
-		IrisTokenRef:           "minos-iris-token",
 		GithubWebhookSecretRef: "github-webhook-secret",
 		Admin:                  core.AdminIdentity{Surface: "discord", SurfaceID: "admin-id"},
 		Project: core.ProjectConfig{
@@ -76,7 +74,7 @@ func newTestServerWithMnemosyne(t *testing.T) (kit testServerKit, mnemo *mnemome
 	}
 	return testServerKit{
 		server: srv, store: store, dispatcher: disp,
-		bearerSecret: bearerSecret, webhookSecret: webhookSecret,
+		signingPub: signingPub, signingPriv: signingPriv, webhookSecret: webhookSecret,
 	}, mnemo
 }
 

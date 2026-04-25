@@ -41,7 +41,7 @@ func TestMemoryLookupEmptyContext(t *testing.T) {
 	})
 	req, _ := http.NewRequestWithContext(context.Background(), "POST",
 		ts.URL+"/memory/lookup", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer iris-token")
+	req.Header.Set("Authorization", "Bearer "+mintIrisToken(t, kit))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestMemoryLookupReturnsContext(t *testing.T) {
 	})
 	req, _ := http.NewRequestWithContext(context.Background(), "POST",
 		ts.URL+"/memory/lookup", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer iris-token")
+	req.Header.Set("Authorization", "Bearer "+mintIrisToken(t, kit))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -115,7 +115,7 @@ func TestMemoryLookupRequiresFields(t *testing.T) {
 	body, _ := json.Marshal(map[string]string{"project_id": "x"}) // missing task_type
 	req, _ := http.NewRequestWithContext(context.Background(), "POST",
 		ts.URL+"/memory/lookup", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer iris-token")
+	req.Header.Set("Authorization", "Bearer "+mintIrisToken(t, kit))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

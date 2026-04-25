@@ -199,6 +199,7 @@ func (s *Server) dispatch(ctx context.Context, task *storage.Task) error {
 		ProjectID:         s.cfg.Project.ID,
 		WorkspaceSize:     task.Envelope.Execution.WorkspaceSize,
 		MinosURL:          s.cfg.MinosPodURL,
+		GitHubBrokerURL:   s.cfg.GitHubBrokerPodURL,
 		ArgusSidecarImage: s.cfg.Project.ArgusSidecarImage,
 		Resolver:          s.provider,
 	})
@@ -312,17 +313,18 @@ func (s *Server) composeCapabilities(ctx context.Context, taskID uuid.UUID, proj
 	endpoints := append([]envelope.McpEndpoint(nil), proj.Capabilities.McpEndpoints...)
 	injected := append([]envelope.InjectedCredential(nil), proj.Capabilities.InjectedCredentials...)
 
-	audience := make([]string, 0, len(endpoints))
-	scopes := make(map[string][]string, len(endpoints))
+	// Audience is the union of "minos" (so the pod can post lifecycle
+	// callbacks like PR / heartbeat / memory / narration) plus every
+	// project-configured broker endpoint. Scopes mirror.
+	audience := []string{"minos"}
+	scopes := map[string][]string{
+		"minos": {"task.lifecycle"},
+	}
 	for _, ep := range endpoints {
 		audience = append(audience, ep.Name)
 		scopes[ep.Name] = append(scopes[ep.Name], ep.Scopes...)
 	}
 
-	secret, err := s.provider.Resolve(ctx, s.cfg.BearerSecretRef)
-	if err != nil {
-		return envelope.Capabilities{}, fmt.Errorf("resolve bearer secret %s: %w", s.cfg.BearerSecretRef, err)
-	}
 	now := s.now()
 	claims := jwt.Claims{
 		Subject:   "task:" + taskID.String(),
@@ -333,9 +335,9 @@ func (s *Server) composeCapabilities(ctx context.Context, taskID uuid.UUID, proj
 		JTI:       uuid.NewString(),
 		McpScopes: scopes,
 	}
-	tok, err := jwt.SignBearer(secret.Data, claims)
+	tok, err := jwt.Sign(s.signingKey, claims)
 	if err != nil {
-		return envelope.Capabilities{}, fmt.Errorf("sign bearer: %w", err)
+		return envelope.Capabilities{}, fmt.Errorf("sign jwt: %w", err)
 	}
 	return envelope.Capabilities{
 		InjectedCredentials: injected,

@@ -118,9 +118,12 @@ Things to replace in `config.json`:
 - `REPLACE_DEFAULT_REPO_URL` → the project's primary GitHub repo URL (used by Iris when commissioning without an explicit repo)
 
 Things to replace in `secrets.json`:
-- `minos/bearer`, `minos/admin-token`, `minos/iris-token` — `openssl rand -base64 32` each
+- `minos/admin-token` — `openssl rand -base64 32`
 - `cerberus/github-webhook` — any strong random string; configure the same value in the GitHub App webhook secret field
 - `hermes/discord-bot-token` — your Discord bot token
+- `minos/signing-key` and `minos/signing-key-pub` — generate with `make build && bin/minosctl gen-signing-key`, paste the two PEM blocks into the matching entries
+- `minos/iris-token` — minted in step 8 below (leave the placeholder for now)
+- `github/app-private-key` — the PEM from your GitHub App; generated/registered in step 6
 
 Then:
 
@@ -171,38 +174,54 @@ TL;DR:
 4. Paste the webhook secret into `deploy/secrets.json` under
    `cerberus/github-webhook`, re-run `deploy/minos-install.sh`
 
-## 7. Worker pod credentials (Anthropic + GitHub)
+## 7. Worker pod credentials + github-broker
 
-The claude-code worker image consumes two credentials at runtime:
+The claude-code worker pod's GitHub access changed in Slice F: instead
+of a long-lived PAT, the pod calls the **github-broker** at startup
+to mint a per-task GitHub App installation token. The PAT is gone
+from the deploy templates entirely.
 
-- `CLAUDE_CODE_OAUTH_TOKEN` — long-lived Claude Code token so pods bill
-  against your Claude.ai subscription (Max / Pro / Teams) instead of
-  metered API spend. Generate once on your workstation:
+### 7a. `CLAUDE_CODE_OAUTH_TOKEN`
 
-  ```sh
-  claude setup-token
-  ```
+Long-lived Claude Code token so pods bill against your Claude.ai
+subscription (Max / Pro / Teams) instead of metered API spend.
+Generate once on your workstation:
 
-  Paste the emitted token into `deploy/secrets.json` →
-  `claude-code/oauth-token.value`. Token is good for ~1 year; re-run
-  to rotate.
+```sh
+claude setup-token
+```
 
-- `GITHUB_TOKEN` — GitHub PAT for `gh pr create` + git push from the
-  worker pod. Phase 1 uses a **fine-grained PAT** scoped to the
-  test repo; Phase 2 will mint short-lived installation tokens via
-  the GitHub App.
+Paste the emitted token into `deploy/secrets.json` →
+`claude-code/oauth-token.value`. Token is good for ~1 year.
 
-  GitHub → Settings → Developer settings → Personal access tokens →
-  Fine-grained tokens → Generate new token. Permissions: Contents
-  read/write, Pull requests read/write, Metadata read. Scope to the
-  repos you want Zakros to commit to.
+### 7b. github-broker daemon
 
-  Paste into `deploy/secrets.json` → `github/pat.value`.
+Runs on the Minos VM alongside Minos. Reads the App's private key from
+the secret provider, validates pod JWTs, mints installation tokens
+per call.
 
-Both wire through `project.capabilities.injected_credentials` in
-`config.json`; the template already maps them to the expected env vars
-that claude-code + gh read automatically. Re-run
-`deploy/minos-install.sh` after editing.
+Copy the broker config template:
+
+```sh
+cp deploy/templates/github-broker.json.example deploy/github-broker.json
+# edit deploy/github-broker.json:
+#   github_app_id            — from your App's settings page
+#   github_installation_id   — from .../installations/<id> URL after install
+```
+
+Make sure `deploy/secrets.json` has `github/app-private-key` (the PEM
+you downloaded when registering the App in step 6). Then:
+
+```sh
+deploy/github-broker-install.sh
+
+# tail logs
+ssh zakros@$MINOS 'sudo journalctl -u github-broker -f'
+```
+
+The broker listens on `:8082` and the worker pod hits it via
+`ZAKROS_GITHUB_BROKER_URL` (configured in `config.json` →
+`github_broker_pod_url`).
 
 ## 8. Iris conversational pod
 
@@ -214,9 +233,18 @@ OAuth token the worker pod uses; Phase 2 routes through Apollo, Phase 3
 swaps backend to Athena Ollama.
 
 Apply the Deployment after the worker images are loaded (step 3) and
-Minos is running (step 4):
+Minos is running (step 4). Iris's bearer is now a Minos-minted JWT
+(Slice F) — mint it once, paste into secrets.json, then install:
 
 ```sh
+# Mint Iris's long-lived JWT (calls Minos /admin/iris/mint-token)
+MINOS_URL=http://$MINOS:8080 \
+MINOS_ADMIN_TOKEN="$(jq -r '.credentials["minos/admin-token"].value' deploy/secrets.json)" \
+  bin/minosctl mint-iris-token
+
+# Paste the printed JWT into deploy/secrets.json under
+#   "minos/iris-token": { "value": "<the JWT>" }
+
 deploy/iris-install.sh
 
 # tail logs

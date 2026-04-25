@@ -1,20 +1,24 @@
-// Package jwt handles pod-to-broker authentication.
+// Package jwt handles pod-to-broker authentication via Minos-signed
+// Ed25519 JWTs per architecture.md §6 MCP Broker Authentication.
 //
-// Phase 1 uses a bearer token minted at pod spawn and verified by a
-// shared-secret check on the receiving broker — sufficient because every
-// broker and pod runs inside Crete on a trusted Proxmox virtual bridge
-// (architecture.md §6 MCP Broker Authentication, Phase 1 posture).
+// Minos holds the Ed25519 private key and signs one JWT per pod at
+// spawn. Brokers hold the matching public key (distributed via the
+// configured secret provider at broker startup) and verify on every
+// request. Scope enforcement is per-call: the broker compares the
+// requested operation against the JWT's `mcp_scopes[<broker>]` list.
 //
-// Phase 2 switches to Minos-signed Ed25519 JWTs with per-scope claims; the
-// Claims type defined here is already the Phase 2 shape so Phase 1 bearer
-// tokens can carry it as an opaque payload and Phase 2 swap is a signature
-// change, not a claim-shape change.
+// Key rotation is the emergency-revocation lever: rotate Minos's
+// signing key and every outstanding JWT becomes unverifiable
+// simultaneously. The previous private key may stay loaded as a
+// verification-only fallback during a brief grace window if needed,
+// though Phase 2 ships a hard-cutover rotation primitive.
 package jwt
 
 import "time"
 
-// Claims is the Phase 2 JWT body shape, usable in Phase 1 as an opaque
-// per-pod fact Minos stamps and brokers consult on arrival.
+// Claims is the JWT body shape brokers verify. Subject, Issuer,
+// Audience, IssuedAt, Expires, JTI, and McpScopes match the design
+// in architecture.md §6 MCP Broker Authentication.
 type Claims struct {
 	Subject  string    `json:"sub"`
 	Issuer   string    `json:"iss"`
@@ -35,6 +39,21 @@ func (c *Claims) HasScope(broker, op string) bool {
 	}
 	for _, s := range c.McpScopes[broker] {
 		if s == op {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAudience reports whether broker is in the JWT's audience claim.
+// Brokers refuse tokens not addressed to them even if scopes happen to
+// be set — a stricter check that closes a confused-deputy gap.
+func (c *Claims) HasAudience(broker string) bool {
+	if c == nil {
+		return false
+	}
+	for _, a := range c.Audience {
+		if a == broker {
 			return true
 		}
 	}

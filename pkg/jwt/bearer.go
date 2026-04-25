@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"time"
@@ -8,16 +9,16 @@ import (
 	gojwt "github.com/golang-jwt/jwt/v5"
 )
 
-// ErrInvalidBearer is returned by VerifyBearer when the token fails any
+// ErrInvalidBearer is returned by Verify when the token fails any
 // signature, expiry, or claim-shape check.
 var ErrInvalidBearer = errors.New("invalid bearer token")
 
-// SignBearer issues a Phase 1 bearer token: a JWT with HS256 signature over
-// the Claims. Phase 2 swaps the algorithm for Ed25519 (EdDSA) without
-// changing the claim shape — signature swap only.
-func SignBearer(secret []byte, c Claims) (string, error) {
-	if len(secret) == 0 {
-		return "", fmt.Errorf("%w: empty signing secret", ErrInvalidBearer)
+// Sign issues a Minos-minted JWT with EdDSA (Ed25519) signature over
+// the Claims. priv is Minos's signing private key (resolved from the
+// secret provider at startup).
+func Sign(priv ed25519.PrivateKey, c Claims) (string, error) {
+	if len(priv) == 0 {
+		return "", fmt.Errorf("%w: empty signing key", ErrInvalidBearer)
 	}
 	mc := gojwt.MapClaims{
 		"sub":        c.Subject,
@@ -28,24 +29,23 @@ func SignBearer(secret []byte, c Claims) (string, error) {
 		"jti":        c.JTI,
 		"mcp_scopes": c.McpScopes,
 	}
-	tok := gojwt.NewWithClaims(gojwt.SigningMethodHS256, mc)
-	return tok.SignedString(secret)
+	tok := gojwt.NewWithClaims(gojwt.SigningMethodEdDSA, mc)
+	return tok.SignedString(priv)
 }
 
-// VerifyBearer validates a token produced by SignBearer (or any compatible
-// issuer using the same secret) and returns the extracted Claims. Expiry
-// and signature are both checked; missing or malformed claim fields yield
-// ErrInvalidBearer.
-func VerifyBearer(secret []byte, token string) (*Claims, error) {
-	if len(secret) == 0 {
-		return nil, fmt.Errorf("%w: empty verification secret", ErrInvalidBearer)
+// Verify validates a JWT against pub (Minos's signing public key,
+// distributed to brokers via the secret provider). Expiry, signing
+// algorithm, and claim shape are all checked.
+func Verify(pub ed25519.PublicKey, token string) (*Claims, error) {
+	if len(pub) == 0 {
+		return nil, fmt.Errorf("%w: empty verification key", ErrInvalidBearer)
 	}
 	parsed, err := gojwt.Parse(token, func(t *gojwt.Token) (any, error) {
-		if _, ok := t.Method.(*gojwt.SigningMethodHMAC); !ok {
+		if _, ok := t.Method.(*gojwt.SigningMethodEd25519); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
-		return secret, nil
-	}, gojwt.WithValidMethods([]string{"HS256"}))
+		return pub, nil
+	}, gojwt.WithValidMethods([]string{"EdDSA"}))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidBearer, err)
 	}

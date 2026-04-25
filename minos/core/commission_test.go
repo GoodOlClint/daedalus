@@ -2,9 +2,11 @@ package core_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/zakros-hq/zakros/cerberus/core/replay"
 	"github.com/zakros-hq/zakros/minos/core"
@@ -44,26 +46,68 @@ type testServerKit struct {
 	server        *core.Server
 	store         *memstore.Store
 	dispatcher    *fakedispatch.Dispatcher
-	bearerSecret  []byte
+	signingPub    ed25519.PublicKey
+	signingPriv   ed25519.PrivateKey
 	webhookSecret []byte
+}
+
+// freshSigningKeypair generates an Ed25519 keypair for one test rig and
+// returns the PEM-encoded private key (what Minos resolves at startup)
+// plus the parsed keypair (what tests use to mint and verify JWTs).
+// Per-test keypair so a leaked test secret can't bleed across.
+func freshSigningKeypair(t *testing.T) ([]byte, ed25519.PublicKey, ed25519.PrivateKey) {
+	t.Helper()
+	pub, priv, err := jwt.GenerateKeypair()
+	if err != nil {
+		t.Fatalf("generate signing keypair: %v", err)
+	}
+	privPEM, err := jwt.MarshalPrivateKey(priv)
+	if err != nil {
+		t.Fatalf("marshal private: %v", err)
+	}
+	return privPEM, pub, priv
+}
+
+// mintIrisToken signs a JWT with the test rig's signing key carrying
+// the audiences + scopes a real Iris pod would hold. Tests use this
+// instead of the old shared-secret "iris-token" string.
+func mintIrisToken(t *testing.T, kit testServerKit) string {
+	t.Helper()
+	now := time.Now().UTC()
+	c := jwt.Claims{
+		Subject:  "iris",
+		Issuer:   "minos",
+		Audience: []string{"minos", "hermes", "mnemosyne"},
+		IssuedAt: now,
+		Expires:  now.Add(time.Hour),
+		JTI:      "iris-test-" + now.Format(time.RFC3339Nano),
+		McpScopes: map[string][]string{
+			"minos":     {"query_state"},
+			"hermes":    {"events.next", "post_as_iris"},
+			"mnemosyne": {"memory.lookup"},
+		},
+	}
+	tok, err := jwt.Sign(kit.signingPriv, c)
+	if err != nil {
+		t.Fatalf("mint iris token: %v", err)
+	}
+	return tok
 }
 
 func newTestServer(t *testing.T) testServerKit {
 	t.Helper()
-	bearerSecret := []byte("bearer-secret-for-tests")
+	signingPrivPEM, signingPub, signingPriv := freshSigningKeypair(t)
 	webhookSecret := []byte("webhook-secret-for-tests")
 	prov := &staticProvider{refs: map[string][]byte{
-		"minos-bearer-secret":   bearerSecret,
+		"minos-signing-key":     signingPrivPEM,
 		"minos-admin-token":     []byte("admin-token"),
-		"minos-iris-token":      []byte("iris-token"),
 		"github-app-token":      []byte("ghs_injected"),
 		"github-webhook-secret": webhookSecret,
 	}}
 	cfg := core.Config{
 		ListenAddr:             ":0",
-		BearerSecretRef:        "minos-bearer-secret",
+		SigningKeyRef:          "minos-signing-key",
 		AdminTokenRef:          "minos-admin-token",
-		IrisTokenRef:           "minos-iris-token",
 		GithubWebhookSecretRef: "github-webhook-secret",
 		Admin: core.AdminIdentity{
 			Surface:   "discord",
@@ -112,7 +156,8 @@ func newTestServer(t *testing.T) testServerKit {
 		server:        srv,
 		store:         store,
 		dispatcher:    disp,
-		bearerSecret:  bearerSecret,
+		signingPub:    signingPub,
+		signingPriv:   signingPriv,
 		webhookSecret: webhookSecret,
 	}
 }
@@ -161,7 +206,7 @@ func TestCommissionValidates(t *testing.T) {
 func TestCommissionComposesEnvelope(t *testing.T) {
 	kit := newTestServer(t)
 	srv := kit.server
-	bearerSecret := kit.bearerSecret
+	signingPub := kit.signingPub
 	ctx := context.Background()
 
 	req := core.CommissionRequest{
@@ -201,10 +246,11 @@ func TestCommissionComposesEnvelope(t *testing.T) {
 		t.Fatal("mcp_auth_token not minted")
 	}
 
-	// Verify the bearer round-trips.
-	claims, err := jwt.VerifyBearer(bearerSecret, env.Capabilities.McpAuthToken)
+	// Verify the JWT round-trips against the public key derived from
+	// the test rig's signing key.
+	claims, err := jwt.Verify(signingPub, env.Capabilities.McpAuthToken)
 	if err != nil {
-		t.Fatalf("verify minted bearer: %v", err)
+		t.Fatalf("verify minted jwt: %v", err)
 	}
 	if claims.Subject != "task:"+task.ID.String() {
 		t.Errorf("unexpected subject: %s", claims.Subject)
@@ -214,6 +260,12 @@ func TestCommissionComposesEnvelope(t *testing.T) {
 	}
 	if !claims.HasScope("thread", "post_status") {
 		t.Errorf("thread:post_status scope missing from minted claims: %+v", claims.McpScopes)
+	}
+	if !claims.HasAudience("minos") {
+		t.Errorf("minos audience missing — pod cannot post lifecycle callbacks: %+v", claims.Audience)
+	}
+	if !claims.HasScope("minos", "task.lifecycle") {
+		t.Errorf("minos:task.lifecycle scope missing — pod cannot post lifecycle callbacks: %+v", claims.McpScopes)
 	}
 }
 
@@ -313,15 +365,15 @@ func TestCommissionUnresolvableCredentialFails(t *testing.T) {
 	// Break the provider by replacing the server's provider lookup for the
 	// GITHUB_TOKEN ref — simulate an operator forgetting to seed the secret.
 	// Easiest way: use a fresh server with a provider that lacks the entry.
-	bearerSecret := []byte("bearer-secret-for-tests")
+	signingPrivPEM, _, _ := freshSigningKeypair(t)
 	prov := &staticProvider{refs: map[string][]byte{
-		"minos-bearer-secret": bearerSecret,
-		"minos-admin-token":   []byte("admin-token"),
+		"minos-signing-key": signingPrivPEM,
+		"minos-admin-token": []byte("admin-token"),
 		// Intentionally missing github-app-token.
 	}}
 	cfg := core.Config{
 		ListenAddr:             ":0",
-		BearerSecretRef:        "minos-bearer-secret",
+		SigningKeyRef:          "minos-signing-key",
 		AdminTokenRef:          "minos-admin-token",
 		GithubWebhookSecretRef: "github-webhook-secret",
 		Admin:                  core.AdminIdentity{Surface: "discord", SurfaceID: "admin-id"},

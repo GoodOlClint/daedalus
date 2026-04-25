@@ -31,6 +31,12 @@ type BuilderInput struct {
 	// pod → Minos PR-report path.
 	MinosURL string
 
+	// GitHubBrokerURL is the pod-reachable URL of the github-broker
+	// (cmd/github-broker). Empty is acceptable but disables the pod's
+	// installation-token mint path — the entrypoint will fail on the
+	// `clone` step. Slice F default: same VM as Minos, port 8082.
+	GitHubBrokerURL string
+
 	// ArgusSidecarImage, when set, adds the Argus heartbeat sidecar
 	// container to the pod. Empty disables the sidecar (Slice A posture).
 	ArgusSidecarImage string
@@ -85,6 +91,9 @@ func BuildPodSpec(ctx context.Context, in BuilderInput) (PodSpec, error) {
 	}
 	if in.MinosURL != "" {
 		plainEnv["ZAKROS_MINOS_URL"] = in.MinosURL
+	}
+	if in.GitHubBrokerURL != "" {
+		plainEnv["ZAKROS_GITHUB_BROKER_URL"] = in.GitHubBrokerURL
 	}
 	if in.Envelope.Capabilities.McpAuthToken != "" {
 		secretEnv["MCP_AUTH_TOKEN"] = in.Envelope.Capabilities.McpAuthToken

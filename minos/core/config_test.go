@@ -22,7 +22,7 @@ func TestLoadConfigValid(t *testing.T) {
 	path := writeConfig(t, `{
   "listen_addr": ":8080",
   "database_url": "postgres://localhost/zakros",
-  "bearer_secret_ref": "minos-bearer-secret",
+  "signing_key_ref": "minos-bearer-secret",
   "admin_token_ref": "minos-admin-token",
   "github_webhook_secret_ref": "github-webhook-secret",
   "admin": {"surface": "discord", "surface_id": "123"},
@@ -60,12 +60,12 @@ func TestLoadConfigValid(t *testing.T) {
 
 func TestLoadConfigMissingFields(t *testing.T) {
 	cases := []struct{ name, body string }{
-		{"no listen", `{"bearer_secret_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","admin":{"surface":"s","surface_id":"i"},"project":{"id":"p","backend":"b","plugin_image":"i"}}`},
+		{"no listen", `{"signing_key_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","admin":{"surface":"s","surface_id":"i"},"project":{"id":"p","backend":"b","plugin_image":"i"}}`},
 		{"no bearer", `{"listen_addr":":8080","admin_token_ref":"y","github_webhook_secret_ref":"z","admin":{"surface":"s","surface_id":"i"},"project":{"id":"p","backend":"b","plugin_image":"i"}}`},
-		{"no webhook", `{"listen_addr":":8080","bearer_secret_ref":"x","admin_token_ref":"y","admin":{"surface":"s","surface_id":"i"},"project":{"id":"p","backend":"b","plugin_image":"i"}}`},
-		{"no admin", `{"listen_addr":":8080","bearer_secret_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","project":{"id":"p","backend":"b","plugin_image":"i"}}`},
-		{"no project.id", `{"listen_addr":":8080","bearer_secret_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","admin":{"surface":"s","surface_id":"i"},"project":{"backend":"b","plugin_image":"i"}}`},
-		{"no plugin image", `{"listen_addr":":8080","bearer_secret_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","admin":{"surface":"s","surface_id":"i"},"project":{"id":"p","backend":"b"}}`},
+		{"no webhook", `{"listen_addr":":8080","signing_key_ref":"x","admin_token_ref":"y","admin":{"surface":"s","surface_id":"i"},"project":{"id":"p","backend":"b","plugin_image":"i"}}`},
+		{"no admin", `{"listen_addr":":8080","signing_key_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","project":{"id":"p","backend":"b","plugin_image":"i"}}`},
+		{"no project.id", `{"listen_addr":":8080","signing_key_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","admin":{"surface":"s","surface_id":"i"},"project":{"backend":"b","plugin_image":"i"}}`},
+		{"no plugin image", `{"listen_addr":":8080","signing_key_ref":"x","admin_token_ref":"y","github_webhook_secret_ref":"z","admin":{"surface":"s","surface_id":"i"},"project":{"id":"p","backend":"b"}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

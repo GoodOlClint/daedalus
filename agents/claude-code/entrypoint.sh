@@ -18,6 +18,7 @@ set -euo pipefail
 : "${ZAKROS_MEMORY_DIR:=/var/run/zakros/memory}"
 : "${WORKSPACE:=/workspace}"
 : "${ZAKROS_MINOS_URL:=}"
+: "${ZAKROS_GITHUB_BROKER_URL:=}"
 
 log()  { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 die()  { log "ERROR: $*"; post_status "status" "error: $*" "" || true; flush_memory "failed" "$*"; exit 1; }
@@ -82,7 +83,10 @@ command -v jq  >/dev/null || die "jq not installed in image"
 command -v git >/dev/null || die "git not installed in image"
 command -v gh  >/dev/null || die "gh CLI not installed in image"
 command -v claude >/dev/null || die "claude (Claude Code CLI) not installed in image"
-[[ -n "${GITHUB_TOKEN:-}" ]] || die "GITHUB_TOKEN not injected"
+# GITHUB_TOKEN is no longer injected directly; we mint a per-task App
+# installation token from the github broker just before clone.
+[[ -n "$ZAKROS_GITHUB_BROKER_URL" ]] || die "ZAKROS_GITHUB_BROKER_URL not set (Slice F: pod must mint installation tokens via the broker)"
+[[ -n "${MCP_AUTH_TOKEN:-}" ]] || die "MCP_AUTH_TOKEN not injected (required to authenticate to the github broker)"
 
 # Parse envelope
 REPO_URL=$(jq -r '.execution.repo_url' "$ZAKROS_ENVELOPE")
@@ -91,6 +95,27 @@ BASE_BRANCH=$(jq -r '.execution.base_branch' "$ZAKROS_ENVELOPE")
 BRIEF_SUMMARY=$(jq -r '.brief.summary' "$ZAKROS_ENVELOPE")
 BRIEF_DETAIL=$(jq -r '.brief.detail // ""' "$ZAKROS_ENVELOPE")
 PROJECT_ID=$(jq -r '.project_id' "$ZAKROS_ENVELOPE")
+
+# Mint a GitHub App installation access token from the broker. The pod
+# JWT (MCP_AUTH_TOKEN) carries audience=github + scope=clone; the
+# broker mints a token scoped to the requested repo and returns it.
+# Replaces Phase 1's long-lived PAT injection.
+REPO_FULL_NAME=$(printf '%s' "$REPO_URL" | sed -E 's#^https?://[^/]+/##' | sed -E 's#\.git$##')
+[[ -n "$REPO_FULL_NAME" ]] || die "could not derive owner/name from repo_url=$REPO_URL"
+log "minting github installation token for $REPO_FULL_NAME"
+token_payload=$(jq -n --arg repo "$REPO_FULL_NAME" '{repo: $repo}')
+token_response=$(curl -sS -o /tmp/github-token-response -w '%{http_code}' \
+  -X POST \
+  -H "Authorization: Bearer $MCP_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data "$token_payload" \
+  "$ZAKROS_GITHUB_BROKER_URL/github/installation-token" \
+  || echo "000")
+[[ "$token_response" == "200" ]] || die "github broker mint returned $token_response: $(cat /tmp/github-token-response 2>/dev/null)"
+GITHUB_TOKEN=$(jq -r '.token' /tmp/github-token-response)
+[[ -n "$GITHUB_TOKEN" && "$GITHUB_TOKEN" != "null" ]] || die "github broker returned empty token"
+export GITHUB_TOKEN
+log "github installation token minted (expires $(jq -r '.expires_at' /tmp/github-token-response))"
 
 log "task $ZAKROS_TASK_ID run $ZAKROS_RUN_ID project=$PROJECT_ID"
 log "repo=$REPO_URL branch=$BRANCH base=$BASE_BRANCH"

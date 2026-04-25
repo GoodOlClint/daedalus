@@ -10,15 +10,16 @@ import (
 	"github.com/zakros-hq/zakros/pkg/envelope"
 )
 
-// irisAuthedRequest builds a request bearing the Iris token used by
-// newTestServer's static provider ("iris-token").
-func irisAuthedRequest(t *testing.T, method, url string) *http.Request {
+// irisAuthedRequest builds a request carrying a freshly-minted Iris JWT
+// signed by the test rig's signing key. Iris-scoped audiences and
+// scopes match what minos/core/iris_mint.go produces in production.
+func irisAuthedRequest(t *testing.T, kit testServerKit, method, url string) *http.Request {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, url, nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	req.Header.Set("Authorization", "Bearer iris-token")
+	req.Header.Set("Authorization", "Bearer "+mintIrisToken(t, kit))
 	return req
 }
 
@@ -52,7 +53,7 @@ func TestStateRequiresIrisBearer(t *testing.T) {
 }
 
 func TestStateTasksReturnsCommissioned(t *testing.T) {
-	ts, _ := startTestHTTPServer(t)
+	ts, kit := startTestHTTPServer(t)
 
 	req := authedRequest(t, "POST", ts.URL+"/tasks", core.CommissionRequest{
 		TaskType:  envelope.TaskTypeCode,
@@ -69,7 +70,7 @@ func TestStateTasksReturnsCommissioned(t *testing.T) {
 		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
 
-	listResp, err := http.DefaultClient.Do(irisAuthedRequest(t, "GET", ts.URL+"/state/tasks"))
+	listResp, err := http.DefaultClient.Do(irisAuthedRequest(t, kit, "GET", ts.URL+"/state/tasks"))
 	if err != nil {
 		t.Fatalf("state/tasks: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestStateTasksReturnsCommissioned(t *testing.T) {
 }
 
 func TestStateRecentEmptyForNonTerminal(t *testing.T) {
-	ts, _ := startTestHTTPServer(t)
+	ts, kit := startTestHTTPServer(t)
 
 	req := authedRequest(t, "POST", ts.URL+"/tasks", core.CommissionRequest{
 		TaskType:  envelope.TaskTypeCode,
@@ -104,7 +105,7 @@ func TestStateRecentEmptyForNonTerminal(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	recentResp, err := http.DefaultClient.Do(irisAuthedRequest(t, "GET", ts.URL+"/state/recent"))
+	recentResp, err := http.DefaultClient.Do(irisAuthedRequest(t, kit, "GET", ts.URL+"/state/recent"))
 	if err != nil {
 		t.Fatalf("state/recent: %v", err)
 	}

@@ -2,12 +2,12 @@
   "listen_addr": ":8080",
   "database_url": "postgres://zakros:REPLACE_POSTGRES_PASSWORD@172.16.140.100:5432/zakros?sslmode=disable",
 
-  "bearer_secret_ref": "minos/bearer",
+  "signing_key_ref": "minos/signing-key",
   "admin_token_ref": "minos/admin-token",
-  "iris_token_ref": "minos/iris-token",
   "github_webhook_secret_ref": "cerberus/github-webhook",
 
   "minos_pod_url": "http://172.16.140.101:8080",
+  "github_broker_pod_url": "http://172.16.140.101:8082",
 
   "admin": {
     "surface": "discord",
@@ -36,13 +36,15 @@
         {
           "env_var": "CLAUDE_CODE_OAUTH_TOKEN",
           "credentials_ref": "claude-code/oauth-token"
-        },
-        {
-          "env_var": "GITHUB_TOKEN",
-          "credentials_ref": "github/pat"
         }
       ],
-      "mcp_endpoints": []
+      "mcp_endpoints": [
+        {
+          "name": "github",
+          "url": "http://172.16.140.101:8082",
+          "scopes": ["clone"]
+        }
+      ]
     }
   },
 

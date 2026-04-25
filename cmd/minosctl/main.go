@@ -18,6 +18,7 @@ import (
 
 	"github.com/zakros-hq/zakros/minos/core"
 	"github.com/zakros-hq/zakros/pkg/envelope"
+	"github.com/zakros-hq/zakros/pkg/jwt"
 )
 
 // Environment variables read by minosctl. Keeping the token out of argv
@@ -37,6 +38,8 @@ func main() {
 	root.AddCommand(commissionCmd())
 	root.AddCommand(listCmd())
 	root.AddCommand(getCmd())
+	root.AddCommand(genSigningKeyCmd())
+	root.AddCommand(mintIrisTokenCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -125,6 +128,65 @@ func getCmd() *cobra.Command {
 				return err
 			}
 			return printJSON(resp)
+		},
+	}
+}
+
+// genSigningKeyCmd prints a fresh Ed25519 keypair as PEM blocks for the
+// operator to paste into deploy/secrets.json. Minos's signing_key_ref
+// holds the private PEM; brokers (github-broker, future H1/H2) hold the
+// public PEM via their own ref. Output is two clearly-labeled blocks
+// on stdout — operators copy each into the corresponding secret entry.
+func genSigningKeyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "gen-signing-key",
+		Short: "Generate a Minos JWT signing keypair (Ed25519)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			pub, priv, err := jwt.GenerateKeypair()
+			if err != nil {
+				return fmt.Errorf("generate keypair: %w", err)
+			}
+			privPEM, err := jwt.MarshalPrivateKey(priv)
+			if err != nil {
+				return fmt.Errorf("marshal private: %w", err)
+			}
+			pubPEM, err := jwt.MarshalPublicKey(pub)
+			if err != nil {
+				return fmt.Errorf("marshal public: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "# Paste into deploy/secrets.json under minos/signing-key.value:")
+			fmt.Fprintln(cmd.OutOrStdout(), string(privPEM))
+			fmt.Fprintln(cmd.OutOrStdout(), "# Paste into deploy/secrets.json under minos/signing-key-pub.value")
+			fmt.Fprintln(cmd.OutOrStdout(), "# (consumed by every broker that verifies pod JWTs):")
+			fmt.Fprintln(cmd.OutOrStdout(), string(pubPEM))
+			return nil
+		},
+	}
+}
+
+// mintIrisTokenCmd asks Minos to mint a long-lived JWT for the Iris
+// pod. Output is the raw JWT on stdout — operators paste it into
+// deploy/secrets.json under minos/iris-token, then re-run iris-install.
+func mintIrisTokenCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mint-iris-token",
+		Short: "Mint Iris's long-lived bearer JWT (calls Minos /admin/iris/mint-token)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			data, err := do(cmd.Context(), "POST", "/admin/iris/mint-token", nil)
+			if err != nil {
+				return err
+			}
+			var resp struct {
+				Token string `json:"token"`
+			}
+			if err := json.Unmarshal(data, &resp); err != nil {
+				return fmt.Errorf("parse response: %w", err)
+			}
+			if resp.Token == "" {
+				return errors.New("minos returned empty token")
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), resp.Token)
+			return nil
 		},
 	}
 }

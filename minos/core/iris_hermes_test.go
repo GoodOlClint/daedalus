@@ -63,7 +63,7 @@ func TestEventsNextDeliversAddressedMessages(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(context.Background(), "GET",
 		ts.URL+"/hermes/events.next?since=0&max=10&timeout=2", nil)
-	req.Header.Set("Authorization", "Bearer iris-token")
+	req.Header.Set("Authorization", "Bearer "+mintIrisToken(t, kit))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("events.next: %v", err)
@@ -95,7 +95,7 @@ func TestEventsNextLongPollTimesOut(t *testing.T) {
 	start := time.Now()
 	req, _ := http.NewRequestWithContext(context.Background(), "GET",
 		ts.URL+"/hermes/events.next?since=0&timeout=1", nil)
-	req.Header.Set("Authorization", "Bearer iris-token")
+	req.Header.Set("Authorization", "Bearer "+mintIrisToken(t, kit))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("events.next: %v", err)
@@ -134,7 +134,7 @@ func TestPostAsIrisPosts(t *testing.T) {
 	})
 	req, _ := http.NewRequestWithContext(context.Background(), "POST",
 		ts.URL+"/hermes/post_as_iris", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer iris-token")
+	req.Header.Set("Authorization", "Bearer "+mintIrisToken(t, kit))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

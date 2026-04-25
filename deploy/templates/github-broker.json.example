@@ -1,0 +1,8 @@
+{
+  "listen_addr": ":8082",
+  "secrets_file": "/etc/zakros/secrets.json",
+  "signing_key_pub_ref": "minos/signing-key-pub",
+  "github_app_id": REPLACE_GITHUB_APP_ID,
+  "github_installation_id": REPLACE_GITHUB_INSTALLATION_ID,
+  "github_app_private_key_ref": "github/app-private-key"
+}

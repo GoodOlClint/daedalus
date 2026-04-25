@@ -15,13 +15,15 @@ import (
 )
 
 // startTestHTTPServer brings up the Minos HTTP API on an httptest server.
-// The admin token is "admin-token" per newTestServer.
-func startTestHTTPServer(t *testing.T) (*httptest.Server, *core.Server) {
+// The admin token is "admin-token" per newTestServer; the returned kit
+// exposes the test rig's signing key so Iris-bearing tests can mint
+// real JWTs.
+func startTestHTTPServer(t *testing.T) (*httptest.Server, testServerKit) {
 	t.Helper()
-	srv := newTestServer(t).server
-	ts := httptest.NewServer(core.TestingHTTPHandler(srv))
+	kit := newTestServer(t)
+	ts := httptest.NewServer(core.TestingHTTPHandler(kit.server))
 	t.Cleanup(ts.Close)
-	return ts, srv
+	return ts, kit
 }
 
 func authedRequest(t *testing.T, method, url string, body any) *http.Request {
