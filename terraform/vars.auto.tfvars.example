@@ -52,7 +52,7 @@ image_datastore   = "local"
 # → rc.local → opnsense-bootstrap → reboot → LAN up).
 #
 #   make tf-apply-firewall      # Phase 1: SDN + OPNsense only
-#   # wait until ping 10.100.0.1 from another VM on daedalan works
+#   # wait until ping 10.100.0.1 from another VM on zakros works
 #   make tf-apply               # Phase 2: the rest
 #
 # Subsequent applies (no firewall rebuild) can run `make tf-apply`
@@ -90,7 +90,7 @@ wan_bridge      = "vmbr0"
 internal_bridge = "vmbr1"
 
 sdn_zone         = "zakros"
-sdn_vnet         = "daedalan"
+sdn_vnet         = "zakros"
 zakros_vlan_id = 200
 zakros_subnet  = "10.100.0.0/24"
 

@@ -89,7 +89,7 @@ variable "sdn_zone" {
 variable "sdn_vnet" {
   type        = string
   description = "Proxmox SDN VNet name — becomes the bridge name guests attach to (≤ 8 chars, lowercase)"
-  default     = "daedalan"
+  default     = "zakros"
   validation {
     condition     = length(var.sdn_vnet) <= 8 && can(regex("^[a-z][a-z0-9]*$", var.sdn_vnet))
     error_message = "sdn_vnet must be ≤ 8 lowercase alphanumeric chars."
