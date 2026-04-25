@@ -8,12 +8,8 @@ Assumes the flat-VLAN topology (VLAN 140, 172.16.140.0/24, DHCP). Per-guest
 IPs are not stable across `tf-destroy/tf-apply` cycles — the install
 scripts read them from `terraform output -json guests` (helper in
 [`deploy/lib.sh`](lib.sh)). Override with `MINOS_HOST=<ip>` etc. when
-needed.
-
-The Postgres LXC IP isn't in TF output (the Proxmox provider doesn't
-surface LXC runtime IPs); look it up with
-`ssh root@<crete> pct exec 211 -- ip -4 addr show eth0` or from the
-homelab router's DHCP leases.
+needed. Both VM and LXC IPs are populated by the time `tf-apply`
+returns (LXC via the bpg/proxmox provider's `wait_for_ip` block).
 
 ## Teardown and rebuild from scratch
 
@@ -48,12 +44,12 @@ ssh root@172.16.30.103 "rm -f /var/lib/vz/template/iso/noble-server-cloudimg-amd
 
 **Fresh bring-up** from a clean destroy:
 
-1. `make tf-apply` — provisions guests. Once qemu-guest-agent reports,
-   `terraform output -json guests` returns the live IPs and the install
-   scripts pick them up automatically.
-2. Look up the Postgres LXC IP separately (TF doesn't surface it — see
-   above) and update `deploy/config.json` (`database_url`,
-   `minos_pod_url`) if either has changed.
+1. `make tf-apply` — provisions guests. `wait_for_ip` on the LXC and
+   qemu-guest-agent on the VMs both surface IPs to TF state by the time
+   apply returns; install scripts and `terraform output -json guests`
+   pick them up automatically.
+2. If `deploy/config.json` (`database_url`, `minos_pod_url`) was last
+   filled by hand and IPs have shifted, update those fields to match.
 3. Run **sections 1–8 below in order** using your existing
    `deploy/secrets.json` + `deploy/config.json`. Each script is
    idempotent, so if any step fails mid-run you re-run it after the fix.
@@ -72,12 +68,12 @@ ssh root@172.16.30.103 \
   < deploy/postgres-bootstrap.sh
 ```
 
-Then run migrations from your workstation (substitute the LXC IP you
-looked up):
+Then run migrations from your workstation:
 
 ```sh
 go install github.com/pressly/goose/v3/cmd/goose@latest
-DSN="postgres://zakros:$POSTGRES_PASSWORD@<postgres-lxc-ip>:5432/zakros?sslmode=disable"
+PG=$(terraform -chdir=terraform output -json guests | jq -r '.postgres.ip')
+DSN="postgres://zakros:$POSTGRES_PASSWORD@$PG:5432/zakros?sslmode=disable"
 ~/go/bin/goose -dir minos/storage/pgstore/migrations postgres "$DSN" up
 ```
 

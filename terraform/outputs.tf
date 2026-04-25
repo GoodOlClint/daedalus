@@ -1,9 +1,9 @@
 # Consolidated outputs. VM IPs are harvested from qemu-guest-agent
-# (populated on refresh once the agent is up); LXC IPs aren't exposed
-# by the provider — look up via `ssh root@<crete> pct exec <vmid> --
-# ip -4 addr show eth0` or the homelab DHCP leases. MACs are
-# deterministic for VMs (derived from vm_id + ip_offset) and
-# Proxmox-assigned for LXCs.
+# (populated on refresh once the agent is up); LXC IPs come from the
+# bpg/proxmox provider's computed `ipv4` map, paired with
+# wait_for_ip{ipv4=true} on the resource so they're populated by the
+# time the apply returns. MACs are deterministic for VMs (derived from
+# vm_id + ip_offset) and Proxmox-assigned for LXCs.
 
 output "guests" {
   description = "Map of guest name to its metadata"

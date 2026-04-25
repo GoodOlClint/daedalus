@@ -66,4 +66,12 @@ resource "proxmox_virtual_environment_container" "zakros" {
     up_delay   = 10
     down_delay = 10
   }
+
+  # Block apply until DHCP returns a non-link-local IPv4 — without this
+  # the resource returns as soon as Proxmox accepts `pct create`, before
+  # the container's network is up, and the computed `ipv4` map ends up
+  # empty.
+  wait_for_ip {
+    ipv4 = true
+  }
 }

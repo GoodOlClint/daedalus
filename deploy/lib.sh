@@ -27,10 +27,10 @@ _tf_dir() {
 
 # tf_guest_ip <name>
 # Echoes the IPv4 of the named guest (from `terraform output -json guests`).
-# Returns non-zero with empty stdout when the guest has no IP — e.g.,
-# LXCs (Proxmox provider doesn't surface them) or VMs whose
-# qemu-guest-agent hasn't reported yet. Callers fall back to a manual
-# override.
+# Returns non-zero with empty stdout when the guest has no IP — typically
+# means the resource isn't in state yet (run `terraform apply`) or the
+# IP-resolution path hasn't completed (qemu-guest-agent for VMs,
+# wait_for_ip for LXCs). Callers fall back to a manual override.
 tf_guest_ip() {
   local name="$1"
   command -v terraform >/dev/null || { echo "lib.sh: terraform not on PATH" >&2; return 1; }
