@@ -32,8 +32,20 @@ type Config struct {
 	// entrypoint can mint a per-task installation token. Slice F
 	// default: same VM as Minos, port 8082.
 	GitHubBrokerPodURL string `json:"github_broker_pod_url"`
-	Admin       AdminIdentity `json:"admin"`
-	Project     ProjectConfig `json:"project"`
+	// Admins seeds the identity registry on first start with these
+	// (surface, surface_id) tuples as role=admin. Adding/removing
+	// entries here only affects bootstrap of new tuples; existing
+	// rows are not touched (operator manages those via /minos
+	// commands).
+	Admins []AdminIdentity `json:"admins"`
+	// SystemIdentities seeds role=system identities for internal pods
+	// that commission autonomously (Themis in Phase 2 L1 onwards). Same
+	// idempotent bootstrap semantics as Admins.
+	SystemIdentities []SystemIdentity `json:"system_identities"`
+	// Project is the singleton project's bootstrap config. Slice G
+	// upserts it into the project registry on every Minos start so
+	// edits to the on-disk config land at runtime.
+	Project ProjectConfig `json:"project"`
 	// Discord holds credentials for the Phase 1 Discord Hermes plugin.
 	// Zero-value means the plugin is not wired.
 	Discord DiscordConfig `json:"discord"`
@@ -43,9 +55,22 @@ type Config struct {
 	Hibernation HibernationConfig `json:"hibernation"`
 }
 
-// AdminIdentity is the single hardcoded admin tuple checked at command
-// intake per architecture.md §6 Command Intake and Pairing, Phase 1.
+// AdminIdentity is one (surface, surface_id) tuple seeded into the
+// identity registry as role=admin on first start. Phase 2 Slice G
+// switched from a single hardcoded admin to a list — multiple admins
+// is the operator's call.
 type AdminIdentity struct {
+	Surface   string `json:"surface"`
+	SurfaceID string `json:"surface_id"`
+}
+
+// SystemIdentity is one (surface, surface_id) tuple seeded into the
+// identity registry as role=system. Used for internal pods that
+// commission autonomously (Themis in Phase 2 L1 onwards). The
+// (pod-class, themis) slot convention per architecture.md §23 — the
+// surface field carries pod-class, surface_id carries the pod-class
+// name. Slice G ships the bootstrap shape; consumers land with L1.
+type SystemIdentity struct {
 	Surface   string `json:"surface"`
 	SurfaceID string `json:"surface_id"`
 }
@@ -135,8 +160,18 @@ func validateConfig(c *Config) error {
 	if c.GithubWebhookSecretRef == "" {
 		return fmt.Errorf("github_webhook_secret_ref required")
 	}
-	if c.Admin.Surface == "" || c.Admin.SurfaceID == "" {
-		return fmt.Errorf("admin identity (surface, surface_id) required")
+	if len(c.Admins) == 0 {
+		return fmt.Errorf("admins must contain at least one (surface, surface_id) tuple")
+	}
+	for i, a := range c.Admins {
+		if a.Surface == "" || a.SurfaceID == "" {
+			return fmt.Errorf("admins[%d]: surface + surface_id required", i)
+		}
+	}
+	for i, sys := range c.SystemIdentities {
+		if sys.Surface == "" || sys.SurfaceID == "" {
+			return fmt.Errorf("system_identities[%d]: surface + surface_id required", i)
+		}
 	}
 	if c.Project.ID == "" {
 		return fmt.Errorf("project.id required")

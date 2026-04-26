@@ -14,6 +14,8 @@ import (
 	"github.com/zakros-hq/zakros/cerberus/core/replay"
 	"github.com/zakros-hq/zakros/minos/core"
 	"github.com/zakros-hq/zakros/minos/dispatch/fakedispatch"
+	idnmem "github.com/zakros-hq/zakros/minos/identity/memstore"
+	prjmem "github.com/zakros-hq/zakros/minos/project/memstore"
 	"github.com/zakros-hq/zakros/minos/storage/memstore"
 	mnemocore "github.com/zakros-hq/zakros/mnemosyne/core"
 	mnemomem "github.com/zakros-hq/zakros/mnemosyne/memstore"
@@ -38,7 +40,7 @@ func newTestServerWithMnemosyne(t *testing.T) (kit testServerKit, mnemo *mnemome
 		SigningKeyRef:          "minos-signing-key",
 		AdminTokenRef:          "minos-admin-token",
 		GithubWebhookSecretRef: "github-webhook-secret",
-		Admin:                  core.AdminIdentity{Surface: "discord", SurfaceID: "admin-id"},
+		Admins: []core.AdminIdentity{{Surface: "discord", SurfaceID: "admin-id"}},
 		Project: core.ProjectConfig{
 			ID:                   "mnemo-project",
 			Backend:              "claude-code",
@@ -68,6 +70,8 @@ func newTestServerWithMnemosyne(t *testing.T) (kit testServerKit, mnemo *mnemome
 	srv, err := core.New(cfg, prov, store, disp, audit.NewWriterEmitter("t", discardWriter{}),
 		core.WithReplayStore(rs),
 		core.WithMnemosyne(mnemo),
+		core.WithIdentities(idnmem.New(nil)),
+		core.WithProjects(prjmem.New()),
 	)
 	if err != nil {
 		t.Fatalf("new: %v", err)

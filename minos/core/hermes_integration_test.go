@@ -12,6 +12,8 @@ import (
 	"github.com/zakros-hq/zakros/hermes/plugins/fakeplugin"
 	"github.com/zakros-hq/zakros/minos/core"
 	"github.com/zakros-hq/zakros/minos/dispatch/fakedispatch"
+	idnmem "github.com/zakros-hq/zakros/minos/identity/memstore"
+	prjmem "github.com/zakros-hq/zakros/minos/project/memstore"
 	"github.com/zakros-hq/zakros/minos/storage"
 	"github.com/zakros-hq/zakros/minos/storage/memstore"
 	"github.com/zakros-hq/zakros/pkg/audit"
@@ -37,7 +39,7 @@ func newTestServerWithHermes(t *testing.T) (kit testServerKit, plugin *fakeplugi
 		SigningKeyRef:          "minos-signing-key",
 		AdminTokenRef:          "minos-admin-token",
 		GithubWebhookSecretRef: "github-webhook-secret",
-		Admin:                  core.AdminIdentity{Surface: "discord", SurfaceID: "admin-id"},
+		Admins: []core.AdminIdentity{{Surface: "discord", SurfaceID: "admin-id"}},
 		Project: core.ProjectConfig{
 			ID:                   "test-project",
 			Backend:              "claude-code",
@@ -87,6 +89,8 @@ func newTestServerWithHermes(t *testing.T) (kit testServerKit, plugin *fakeplugi
 	srv, err := core.New(cfg, prov, store, disp, audit.NewWriterEmitter("t", discardWriter{}),
 		core.WithReplayStore(rs),
 		core.WithHermes(broker),
+		core.WithIdentities(idnmem.New(nil)),
+		core.WithProjects(prjmem.New()),
 	)
 	if err != nil {
 		t.Fatalf("new server: %v", err)

@@ -15,11 +15,17 @@ import (
 	"github.com/zakros-hq/zakros/pkg/audit"
 	"github.com/zakros-hq/zakros/pkg/envelope"
 	"github.com/zakros-hq/zakros/pkg/jwt"
+	prj "github.com/zakros-hq/zakros/pkg/project"
 )
 
 // CommissionRequest is the operator- or surface-facing input that drives
 // envelope composition. Fields not present are filled from ProjectConfig.
 type CommissionRequest struct {
+	// ProjectID resolves to the project-registry row Slice G uses to
+	// compose the envelope. Optional in single-project deployments —
+	// when empty, Commission falls back to the bootstrap config's
+	// project.id. Phase 3 multi-project requires this on every call.
+	ProjectID  string             `json:"project_id,omitempty"`
 	TaskType   envelope.TaskType  `json:"task_type"`
 	Brief      envelope.Brief     `json:"brief"`
 	Inputs     json.RawMessage    `json:"inputs"`
@@ -63,7 +69,18 @@ func (s *Server) Commission(ctx context.Context, req CommissionRequest) (*storag
 		return nil, fmt.Errorf("commission: task_type %q not yet supported in Phase 1", req.TaskType)
 	}
 
-	proj := s.cfg.Project
+	// Resolve project from the registry. Slice G single-project: the
+	// commission may omit ProjectID — we fall through to the bootstrap
+	// config's project.id. Phase 3 multi-project requires explicit
+	// project_id on every commission.
+	projectID := req.ProjectID
+	if projectID == "" {
+		projectID = s.cfg.Project.ID
+	}
+	proj, err := s.projects.Get(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("commission: project %q: %w", projectID, err)
+	}
 	taskID := uuid.New()
 
 	execution := envelope.Execution{
@@ -279,8 +296,14 @@ func (s *Server) Respawn(ctx context.Context, taskID uuid.UUID) (*storage.Task, 
 		return nil, fmt.Errorf("respawn: task %s has no envelope", taskID)
 	}
 
-	// Fresh capabilities: new bearer + same scopes/endpoints.
-	caps, err := s.composeCapabilities(ctx, taskID, s.cfg.Project)
+	// Fresh capabilities: new JWT + same scopes/endpoints. Pull the
+	// project from the registry so any operator edits since the
+	// original commission take effect on respawn.
+	proj, err := s.projects.Get(ctx, task.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("respawn: project %q: %w", task.ProjectID, err)
+	}
+	caps, err := s.composeCapabilities(ctx, taskID, proj)
 	if err != nil {
 		return nil, fmt.Errorf("respawn: compose capabilities: %w", err)
 	}
@@ -307,9 +330,9 @@ func (s *Server) Respawn(ctx context.Context, taskID uuid.UUID) (*storage.Task, 
 }
 
 // composeCapabilities builds the envelope capabilities block for a new pod,
-// minting the Phase 1 bearer token that the pod presents to every MCP
-// broker it calls.
-func (s *Server) composeCapabilities(ctx context.Context, taskID uuid.UUID, proj ProjectConfig) (envelope.Capabilities, error) {
+// minting the Minos-signed JWT that the pod presents to every MCP broker
+// it calls.
+func (s *Server) composeCapabilities(ctx context.Context, taskID uuid.UUID, proj *prj.Project) (envelope.Capabilities, error) {
 	endpoints := append([]envelope.McpEndpoint(nil), proj.Capabilities.McpEndpoints...)
 	injected := append([]envelope.InjectedCredential(nil), proj.Capabilities.InjectedCredentials...)
 

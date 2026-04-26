@@ -12,6 +12,8 @@ import (
 	"github.com/zakros-hq/zakros/minos/core"
 	"github.com/zakros-hq/zakros/minos/dispatch"
 	"github.com/zakros-hq/zakros/minos/dispatch/fakedispatch"
+	idnmem "github.com/zakros-hq/zakros/minos/identity/memstore"
+	prjmem "github.com/zakros-hq/zakros/minos/project/memstore"
 	"github.com/zakros-hq/zakros/minos/storage"
 	"github.com/zakros-hq/zakros/minos/storage/memstore"
 	"github.com/zakros-hq/zakros/pkg/audit"
@@ -109,9 +111,8 @@ func newTestServer(t *testing.T) testServerKit {
 		SigningKeyRef:          "minos-signing-key",
 		AdminTokenRef:          "minos-admin-token",
 		GithubWebhookSecretRef: "github-webhook-secret",
-		Admin: core.AdminIdentity{
-			Surface:   "discord",
-			SurfaceID: "admin-id",
+		Admins: []core.AdminIdentity{
+			{Surface: "discord", SurfaceID: "admin-id"},
 		},
 		Project: core.ProjectConfig{
 			ID:                   "test-project",
@@ -148,6 +149,8 @@ func newTestServer(t *testing.T) testServerKit {
 	rs := replay.NewMemStore(0)
 	srv, err := core.New(cfg, prov, store, disp, audit.NewWriterEmitter("minos-test", discardWriter{}),
 		core.WithReplayStore(rs),
+		core.WithIdentities(idnmem.New(nil)),
+		core.WithProjects(prjmem.New()),
 	)
 	if err != nil {
 		t.Fatalf("new server: %v", err)
@@ -376,7 +379,7 @@ func TestCommissionUnresolvableCredentialFails(t *testing.T) {
 		SigningKeyRef:          "minos-signing-key",
 		AdminTokenRef:          "minos-admin-token",
 		GithubWebhookSecretRef: "github-webhook-secret",
-		Admin:                  core.AdminIdentity{Surface: "discord", SurfaceID: "admin-id"},
+		Admins: []core.AdminIdentity{{Surface: "discord", SurfaceID: "admin-id"}},
 		Project: core.ProjectConfig{
 			ID:                   "p",
 			Backend:              "claude-code",
@@ -393,7 +396,10 @@ func TestCommissionUnresolvableCredentialFails(t *testing.T) {
 	}
 	_ = kit // silence unused
 	store := memstore.New(nil)
-	srv, err := core.New(cfg, prov, store, fakedispatch.New(), audit.NewWriterEmitter("t", discardWriter{}))
+	srv, err := core.New(cfg, prov, store, fakedispatch.New(), audit.NewWriterEmitter("t", discardWriter{}),
+		core.WithIdentities(idnmem.New(nil)),
+		core.WithProjects(prjmem.New()),
+	)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}

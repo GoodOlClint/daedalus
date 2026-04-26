@@ -24,6 +24,12 @@ import (
 	"github.com/zakros-hq/zakros/minos/dispatch"
 	"github.com/zakros-hq/zakros/minos/dispatch/fakedispatch"
 	"github.com/zakros-hq/zakros/minos/dispatch/k3s"
+	"github.com/zakros-hq/zakros/minos/identity"
+	idnmem "github.com/zakros-hq/zakros/minos/identity/memstore"
+	idnpg "github.com/zakros-hq/zakros/minos/identity/pgstore"
+	"github.com/zakros-hq/zakros/minos/project"
+	prjmem "github.com/zakros-hq/zakros/minos/project/memstore"
+	prjpg "github.com/zakros-hq/zakros/minos/project/pgstore"
 	"github.com/zakros-hq/zakros/minos/secrets/file"
 	"github.com/zakros-hq/zakros/minos/storage"
 	"github.com/zakros-hq/zakros/minos/storage/memstore"
@@ -91,8 +97,16 @@ func run(configPath, providerPath string, memMode, fakeDispatch bool, kubeconfig
 	}
 
 	mnemosyne := openMnemosyne(pool, memMode)
+	identities := openIdentityStore(pool, memMode)
+	projects := openProjectStore(pool, memMode)
 
-	opts := []core.Option{core.WithReplayStore(replayStore), core.WithArgus(a), core.WithMnemosyne(mnemosyne)}
+	opts := []core.Option{
+		core.WithReplayStore(replayStore),
+		core.WithArgus(a),
+		core.WithMnemosyne(mnemosyne),
+		core.WithIdentities(identities),
+		core.WithProjects(projects),
+	}
 	if hermes != nil {
 		opts = append(opts, core.WithHermes(hermes))
 	}
@@ -190,4 +204,22 @@ func openMnemosyne(pool *pgxpool.Pool, memMode bool) mnemocore.Store {
 		return mnemomem.New()
 	}
 	return mnemopg.New(pool)
+}
+
+// openIdentityStore picks the identity-registry backend. memstore for
+// -mem-store / no-pool dev, pgstore against the shared LXC otherwise.
+func openIdentityStore(pool *pgxpool.Pool, memMode bool) identity.Store {
+	if memMode || pool == nil {
+		return idnmem.New(nil)
+	}
+	return idnpg.New(pool)
+}
+
+// openProjectStore picks the project-registry backend. Same shape as
+// openIdentityStore.
+func openProjectStore(pool *pgxpool.Pool, memMode bool) project.Store {
+	if memMode || pool == nil {
+		return prjmem.New()
+	}
+	return prjpg.New(pool)
 }

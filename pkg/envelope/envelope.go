@@ -59,11 +59,16 @@ type Envelope struct {
 
 // Origin records how the task was commissioned. `surface` encodes the
 // intake path (`hermes:<plugin>`, `github-webhook`, `github-mention`,
-// `internal`); `requester` is the identity resolved at command intake.
+// `internal`); `requester` is the identity resolved at command intake;
+// `requester_role` is that identity's role at commission time per
+// architecture.md §6 Audit (preserved on the envelope so forensics
+// after a compromised-pod incident don't depend on the identity
+// registry's current state).
 type Origin struct {
-	Surface   string `json:"surface"`
-	RequestID string `json:"request_id"`
-	Requester string `json:"requester"`
+	Surface       string `json:"surface"`
+	RequestID     string `json:"request_id"`
+	Requester     string `json:"requester"`
+	RequesterRole string `json:"requester_role,omitempty"`
 }
 
 // Brief is the operator-facing task description.

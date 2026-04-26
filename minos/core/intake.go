@@ -11,6 +11,7 @@ import (
 	"github.com/zakros-hq/zakros/minos/storage"
 	"github.com/zakros-hq/zakros/pkg/audit"
 	"github.com/zakros-hq/zakros/pkg/envelope"
+	idn "github.com/zakros-hq/zakros/pkg/identity"
 )
 
 // ErrNotACommand is returned by ParseCommissionCommand for messages that
@@ -85,39 +86,64 @@ func ParseCommissionCommand(text string) (CommissionRequest, error) {
 }
 
 // handleInbound is the hermes InboundHandler Minos subscribes at startup
-// when Hermes is wired in. It accepts only messages from the configured
-// admin identity and dispatches /commission and /status commands.
+// when Hermes is wired in. As of Slice G it dispatches against the
+// identity registry: every command checks the requester's role +
+// capability. /pair is open (anyone can request); /minos approve and
+// /minos revoke require identity.* capabilities; /commission and
+// /status check the corresponding task.* capabilities.
 func (s *Server) handleInbound(ctx context.Context, msg hermescore.InboundMessage) {
-	if s.cfg.Admin.Surface == "" || s.cfg.Admin.SurfaceID == "" {
-		return
-	}
-	if msg.Surface != s.cfg.Admin.Surface || msg.SurfaceUserID != s.cfg.Admin.SurfaceID {
-		// Non-admin — ignore (Phase 1 single-admin posture).
-		return
-	}
 	trimmed := strings.TrimSpace(msg.Content)
-	// /status: list recent tasks — the Phase 1 minimum for "what's
-	// running?" per gate bullet 2. Iris-as-pod (with Ollama) refines
-	// this into true conversational state queries.
+
+	// /pair is open to anyone — that's the whole point: an unknown
+	// contact requests pairing, an admin approves. Handle before any
+	// identity lookup so unregistered tuples can still pair in.
+	if trimmed == "/pair" || strings.HasPrefix(trimmed, "/pair ") {
+		s.handlePair(ctx, msg)
+		return
+	}
+
+	// Look up the requester's identity. Unknown senders are silently
+	// ignored — same posture as Phase 1's "non-admin → drop". This
+	// keeps random channel chatter from triggering audit noise.
+	caller, err := s.identities.LookupBySurface(ctx, msg.Surface, msg.SurfaceUserID)
+	if err != nil || caller == nil {
+		return
+	}
+
+	// /minos <subcommand> — admin operations gated by identity.* caps.
+	if trimmed == "/minos" || strings.HasPrefix(trimmed, "/minos ") {
+		s.handleMinosCommand(ctx, msg, caller)
+		return
+	}
+
+	// /status: list recent tasks. Requires task.query_state capability.
 	if trimmed == "/status" || strings.HasPrefix(trimmed, "/status ") ||
 		strings.EqualFold(trimmed, "what's running?") ||
 		strings.EqualFold(trimmed, "what is running?") {
+		if !caller.HasCapability(idn.CapTaskQueryState) {
+			s.replyCapabilityRefused(ctx, msg, "task.query_state")
+			return
+		}
 		s.handleStatusQuery(ctx, msg)
 		return
 	}
+
+	// Default branch: try to parse as /commission.
 	req, err := ParseCommissionCommand(msg.Content)
 	if err != nil {
 		if errors.Is(err, ErrNotACommand) {
-			// Free-form chatter in admin thread is not a command; ignore.
+			// Free-form chatter — ignore.
 			return
 		}
-		// Malformed /commission — reply via the thread so the admin sees
-		// the parse error.
 		s.audit.Emit(audit.Event{
 			Category: "intake",
 			Outcome:  "parse-failed",
 			Message:  err.Error(),
-			Fields:   map[string]string{"surface": msg.Surface, "user": msg.SurfaceUserID},
+			Fields: map[string]string{
+				"surface":               msg.Surface,
+				"origin.requester":      msg.SurfaceUserID,
+				"origin.requester_role": string(caller.Role),
+			},
 		})
 		if s.hermes != nil && msg.ThreadRef != "" {
 			_ = s.hermes.PostToThread(ctx, msg.Surface, msg.ThreadRef, hermescore.Message{
@@ -127,10 +153,20 @@ func (s *Server) handleInbound(ctx context.Context, msg hermescore.InboundMessag
 		}
 		return
 	}
+
+	// Capability gate per task type. Slice G ships task.commission.code
+	// only; the per-type capabilities for review/docs/release/adr land
+	// with their L2-L5 slices.
+	if !caller.HasCapability(idn.CapTaskCommissionCode) {
+		s.replyCapabilityRefused(ctx, msg, "task.commission.code")
+		return
+	}
+
 	req.Origin = envelope.Origin{
-		Surface:   "hermes:" + msg.Surface,
-		RequestID: fmt.Sprintf("%s:%s", msg.ThreadRef, msg.Timestamp.Format("20060102T150405Z")),
-		Requester: msg.SurfaceUserID,
+		Surface:       "hermes:" + msg.Surface,
+		RequestID:     fmt.Sprintf("%s:%s", msg.ThreadRef, msg.Timestamp.Format("20060102T150405Z")),
+		Requester:     msg.SurfaceUserID,
+		RequesterRole: string(caller.Role),
 	}
 	task, err := s.Commission(ctx, req)
 	if err != nil {
@@ -138,7 +174,11 @@ func (s *Server) handleInbound(ctx context.Context, msg hermescore.InboundMessag
 			Category: "intake",
 			Outcome:  "commission-failed",
 			Message:  err.Error(),
-			Fields:   map[string]string{"surface": msg.Surface, "user": msg.SurfaceUserID},
+			Fields: map[string]string{
+				"surface":               msg.Surface,
+				"origin.requester":      msg.SurfaceUserID,
+				"origin.requester_role": string(caller.Role),
+			},
 		})
 		if s.hermes != nil && msg.ThreadRef != "" {
 			_ = s.hermes.PostToThread(ctx, msg.Surface, msg.ThreadRef, hermescore.Message{
@@ -151,7 +191,33 @@ func (s *Server) handleInbound(ctx context.Context, msg hermescore.InboundMessag
 	s.audit.Emit(audit.Event{
 		Category: "intake",
 		Outcome:  "commissioned",
-		Fields:   map[string]string{"task_id": task.ID.String(), "user": msg.SurfaceUserID},
+		Fields: map[string]string{
+			"task_id":               task.ID.String(),
+			"origin.requester":      msg.SurfaceUserID,
+			"origin.requester_role": string(caller.Role),
+		},
+	})
+}
+
+// replyCapabilityRefused posts a structured "you don't have <cap>"
+// message back to the originating thread and audits the refusal so
+// operators can see refused commands in the log stream.
+func (s *Server) replyCapabilityRefused(ctx context.Context, msg hermescore.InboundMessage, capName string) {
+	s.audit.Emit(audit.Event{
+		Category: "intake",
+		Outcome:  "capability-refused",
+		Fields: map[string]string{
+			"surface":          msg.Surface,
+			"origin.requester": msg.SurfaceUserID,
+			"missing":          capName,
+		},
+	})
+	if s.hermes == nil || msg.ThreadRef == "" {
+		return
+	}
+	_ = s.hermes.PostToThread(ctx, msg.Surface, msg.ThreadRef, hermescore.Message{
+		Kind:    hermescore.KindStatus,
+		Content: fmt.Sprintf("refused: missing capability %s", capName),
 	})
 }
 

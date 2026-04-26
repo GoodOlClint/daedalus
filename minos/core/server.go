@@ -17,6 +17,8 @@ import (
 	mnemocore "github.com/zakros-hq/zakros/mnemosyne/core"
 	"github.com/zakros-hq/zakros/minos/argus"
 	"github.com/zakros-hq/zakros/minos/dispatch"
+	"github.com/zakros-hq/zakros/minos/identity"
+	"github.com/zakros-hq/zakros/minos/project"
 	"github.com/zakros-hq/zakros/minos/storage"
 	"github.com/zakros-hq/zakros/pkg/audit"
 	"github.com/zakros-hq/zakros/pkg/brokerauth"
@@ -52,6 +54,12 @@ type Server struct {
 	minosVerifier     *brokerauth.Verifier
 	hermesVerifier    *brokerauth.Verifier
 	mnemosyneVerifier *brokerauth.Verifier
+
+	// Slice G registries. Both required — Server.New refuses to come up
+	// without them (no fallback to the Phase 1 cfg.Admin/cfg.Project
+	// scalar paths; greenfield posture per phase-2-plan §2).
+	identities identity.Store
+	projects   project.Store
 }
 
 // Option configures a Server at construction time.
@@ -98,6 +106,17 @@ func WithArgus(a *argus.Argus) Option {
 // (sanitized). When nil, commissions omit context and memory POSTs 404.
 func WithMnemosyne(m mnemocore.Store) Option {
 	return func(s *Server) { s.mnemosyne = m }
+}
+
+// WithIdentities wires the identity registry. Required as of Slice G —
+// Server.New errors if no store is provided.
+func WithIdentities(s identity.Store) Option {
+	return func(srv *Server) { srv.identities = s }
+}
+
+// WithProjects wires the project registry. Required as of Slice G.
+func WithProjects(s project.Store) Option {
+	return func(srv *Server) { srv.projects = s }
 }
 
 // New returns a Server wired with its dependencies. It does not start any
@@ -160,6 +179,20 @@ func New(cfg Config, p provider.Provider, store storage.Store, d dispatch.Dispat
 	s.minosVerifier = mkVerifier("minos")
 	s.hermesVerifier = mkVerifier("hermes")
 	s.mnemosyneVerifier = mkVerifier("mnemosyne")
+
+	if s.identities == nil {
+		return nil, errors.New("minos/core: identity store is required (use WithIdentities)")
+	}
+	if s.projects == nil {
+		return nil, errors.New("minos/core: project store is required (use WithProjects)")
+	}
+	bootstrapCtx := context.Background()
+	if err := bootstrapIdentities(bootstrapCtx, s.identities, cfg.Admins, cfg.SystemIdentities); err != nil {
+		return nil, fmt.Errorf("minos/core: bootstrap identities: %w", err)
+	}
+	if err := bootstrapProject(bootstrapCtx, s.projects, cfg.Project); err != nil {
+		return nil, fmt.Errorf("minos/core: bootstrap project: %w", err)
+	}
 
 	if s.hermes != nil {
 		s.hermes.Subscribe(s.handleInbound)

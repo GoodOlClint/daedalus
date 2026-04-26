@@ -9,10 +9,13 @@
   "minos_pod_url": "http://172.16.140.101:8080",
   "github_broker_pod_url": "http://172.16.140.101:8082",
 
-  "admin": {
-    "surface": "discord",
-    "surface_id": "REPLACE_YOUR_DISCORD_USER_ID"
-  },
+  "admins": [
+    {
+      "surface": "discord",
+      "surface_id": "REPLACE_YOUR_DISCORD_USER_ID"
+    }
+  ],
+  "system_identities": [],
 
   "project": {
     "id": "zakros-phase1",
